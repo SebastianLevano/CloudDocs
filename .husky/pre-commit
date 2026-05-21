@@ -1,1 +1,9 @@
+# Load nvm so the hook runs under the workspace's Node 22 (per .nvmrc), not the
+# system Node which may be older. Without this, pnpm 11.1.3 crashes on
+# `node:sqlite` (a Node 22+ builtin) when git hooks spawn a subshell that
+# doesn't inherit the parent's nvm-modified PATH.
+export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
+[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+[ -f .nvmrc ] && nvm use --silent >/dev/null 2>&1
+
 pnpm exec lint-staged

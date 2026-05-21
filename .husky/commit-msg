@@ -1,1 +1,7 @@
+# Load nvm so pnpm (which requires Node 22+) finds the right runtime — see
+# pre-commit hook for full rationale.
+export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
+[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+[ -f .nvmrc ] && nvm use --silent >/dev/null 2>&1
+
 pnpm exec commitlint --edit "$1"

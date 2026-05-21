@@ -1,0 +1,91 @@
+name: Deploy API (CDK)
+
+on:
+  # Manual trigger only for now. Automate on push-to-main once we trust the pipeline.
+  workflow_dispatch:
+    inputs:
+      stage:
+        description: 'Deployment stage'
+        type: choice
+        options: [dev, staging, prod]
+        default: dev
+      skip-bootstrap:
+        description: 'Skip cdk bootstrap (already done for this account/region)'
+        type: boolean
+        default: true
+
+concurrency:
+  group: deploy-api-${{ inputs.stage }}
+  cancel-in-progress: false
+
+permissions:
+  id-token: write # required for AWS OIDC
+  contents: read
+
+jobs:
+  deploy:
+    name: Synth + deploy ${{ inputs.stage }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: ${{ inputs.stage }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.1.3
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install infra dependencies
+        working-directory: infra
+        run: npm ci --no-audit --no-fund
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          # TODO: set AWS_DEPLOY_ROLE_ARN as a repo or environment secret after creating the
+          # GitHub OIDC IAM role. Stack: arn:aws:iam::<account>:role/CloudDocsGithubDeployRole
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: us-east-1
+          role-session-name: github-actions-clouddocs-${{ inputs.stage }}
+
+      - name: CDK synth
+        working-directory: infra
+        env:
+          ALERT_EMAIL: ${{ secrets.ALERT_EMAIL }}
+        run: npx cdk synth --context stage=${{ inputs.stage }}
+
+      - name: CDK bootstrap (if needed)
+        if: ${{ !inputs.skip-bootstrap }}
+        working-directory: infra
+        env:
+          ALERT_EMAIL: ${{ secrets.ALERT_EMAIL }}
+        run: npx cdk bootstrap --context stage=${{ inputs.stage }}
+
+      - name: CDK deploy
+        working-directory: infra
+        env:
+          ALERT_EMAIL: ${{ secrets.ALERT_EMAIL }}
+        run: npx cdk deploy --all --require-approval=never --context stage=${{ inputs.stage }}
+
+      - name: Smoke-test /v1/health
+        env:
+          STAGE: ${{ inputs.stage }}
+        run: |
+          set -euo pipefail
+          # Pull the API URL from the api stack output via CloudFormation describe-stacks.
+          API_URL=$(aws cloudformation describe-stacks \
+            --stack-name "clouddocs-${STAGE}-api" \
+            --query "Stacks[0].Outputs[?OutputKey=='HttpApiUrl'].OutputValue" \
+            --output text)
+          echo "API_URL=$API_URL"
+          RESP=$(curl -fsS "${API_URL}/v1/health")
+          echo "$RESP"
+          echo "$RESP" | grep -q '"status":"ok"'
