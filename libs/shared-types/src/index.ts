@@ -6,3 +6,5 @@
  * both runtime validation (backend) and compile-time inference (frontend).
  */
 export * from './schemas/health';
+export * from './schemas/auth';
+export * from './schemas/orgs';

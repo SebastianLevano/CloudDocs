@@ -84,13 +84,19 @@ Async pipeline:
 
 ## Local development
 
-Requires **Node 22.13+** (see `.nvmrc`) and **pnpm 11+**.
+Requires **Node 22.13+** (see `.nvmrc`), **pnpm 11+**, and **Docker** (for the
+local Postgres).
 
 ```bash
 # One-time
 nvm use                 # pick up .nvmrc
 corepack enable
 pnpm install
+cp .env.example .env.local
+
+# Bring up Postgres + pgvector on localhost:5434
+# (5432/5433 are commonly taken; override with COMPOSE_POSTGRES_PORT=<port>)
+docker compose up -d
 
 # Frontend (Angular dev server, http://localhost:4200)
 pnpm nx serve web

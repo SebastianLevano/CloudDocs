@@ -16,7 +16,11 @@
     "format": "nx format:write",
     "format:check": "nx format:check",
     "graph": "nx graph",
-    "prepare": "husky"
+    "prepare": "husky",
+    "db:migrate:up": "dotenv -e .env.local -- node-pg-migrate -m tools/migrations -d DATABASE_URL -j sql up",
+    "db:migrate:down": "dotenv -e .env.local -- node-pg-migrate -m tools/migrations -d DATABASE_URL -j sql down",
+    "db:migrate:create": "dotenv -e .env.local -- node-pg-migrate -m tools/migrations -d DATABASE_URL -j sql create",
+    "db:reset": "docker exec clouddocs-postgres psql -U clouddocs -d clouddocs -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;' && pnpm db:migrate:up"
   },
   "devDependencies": {
     "@angular-devkit/core": "~21.2.0",
@@ -28,6 +32,7 @@
     "@commitlint/cli": "^19.8.1",
     "@commitlint/config-conventional": "^19.8.1",
     "@eslint/js": "^9.8.0",
+    "@neondatabase/serverless": "^1.1.0",
     "@nx/angular": "22.7.2",
     "@nx/devkit": "22.7.2",
     "@nx/esbuild": "22.7.2",
@@ -45,22 +50,30 @@
     "@swc/helpers": "0.5.18",
     "@types/aws-lambda": "^8.10.161",
     "@types/node": "20.19.9",
+    "@types/pg": "^8.20.0",
     "@typescript-eslint/utils": "^8.40.0",
     "angular-eslint": "^21.2.0",
+    "argon2": "^0.44.0",
+    "dotenv-cli": "^11.0.0",
     "esbuild": "^0.27.0",
     "eslint": "^9.8.0",
     "eslint-config-prettier": "^10.0.0",
     "eslint-plugin-playwright": "^1.6.2",
     "husky": "^9.1.7",
+    "jose": "^6.2.3",
     "jsdom": "^27.1.0",
     "jsonc-eslint-parser": "^2.1.0",
     "lint-staged": "^15.5.2",
+    "node-pg-migrate": "^8.0.4",
     "nx": "22.7.2",
+    "pg": "^8.21.0",
+    "pino": "^10.3.1",
     "prettier": "^3.8.1",
     "tslib": "^2.3.0",
     "typescript": "~5.9.2",
     "typescript-eslint": "^8.40.0",
-    "vitest": "^4.0.8"
+    "vitest": "^4.0.8",
+    "zod": "^4.4.3"
   },
   "dependencies": {
     "@angular/animations": "^21.2.13",
@@ -73,7 +86,6 @@
     "@tailwindcss/postcss": "^4.3.0",
     "postcss": "^8.5.15",
     "rxjs": "~7.8.0",
-    "tailwindcss": "^4.3.0",
-    "zod": "^4.4.3"
+    "tailwindcss": "^4.3.0"
   }
 }
