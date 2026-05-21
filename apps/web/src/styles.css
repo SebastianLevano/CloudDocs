@@ -1,0 +1,70 @@
+@import 'tailwindcss';
+
+/* ===================================================================
+ * CloudDocs AI — Design tokens (dark-first)
+ * Synced with libs/ui-tokens/src/tokens.ts
+ * =================================================================== */
+
+@theme {
+  /* Font families */
+  --font-sans: 'Inter Variable', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* Brand */
+  --color-brand-50: #f3f0ff;
+  --color-brand-100: #e9e3ff;
+  --color-brand-200: #d4c8ff;
+  --color-brand-300: #b6a0ff;
+  --color-brand-400: #9778ff;
+  --color-brand-500: #7c5cff;
+  --color-brand-600: #5b3fe0;
+  --color-brand-700: #4a31b8;
+  --color-brand-800: #392693;
+  --color-brand-900: #2a1d6f;
+
+  /* Surfaces (dark) */
+  --color-bg: #0a0a0a;
+  --color-surface-1: #111111;
+  --color-surface-2: #171717;
+  --color-surface-3: #1f1f1f;
+  --color-border: #262626;
+  --color-border-strong: #3a3a3a;
+
+  /* Text */
+  --color-text: #f5f5f5;
+  --color-text-muted: #a1a1aa;
+  --color-text-dim: #71717a;
+
+  /* Radius */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+}
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+::selection {
+  background: color-mix(in oklch, var(--color-brand-500), transparent 70%);
+  color: var(--color-text);
+}

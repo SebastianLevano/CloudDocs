@@ -1,2 +1,14 @@
 packages:
-  - 'packages/*'
+  - 'apps/*'
+  - 'libs/*'
+
+# Build scripts allowlist (pnpm@11 supply-chain policy)
+allowBuilds:
+  '@parcel/watcher': true
+  less: true
+  nx: true
+  esbuild: true
+  '@swc/core': true
+  lmdb: true
+  msgpackr-extract: true
+  unrs-resolver: true

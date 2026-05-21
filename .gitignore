@@ -1,12 +1,18 @@
-# See https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files for more about ignoring files.
-
-# compiled output
+# Compiled output
 dist
 tmp
 out-tsc
+build
+coverage
+*.tsbuildinfo
 
-# dependencies
+# Dependencies
 node_modules
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
 
 # IDEs and editors
 /.idea
@@ -17,33 +23,52 @@ node_modules
 .settings/
 *.sublime-workspace
 
-# IDE - VSCode
+# VSCode
 .vscode/*
 !.vscode/settings.json
 !.vscode/tasks.json
 !.vscode/launch.json
 !.vscode/extensions.json
 
-# misc
+# Misc
 /.sass-cache
 /connect.lock
-/coverage
 /libpeerconnection.log
 npm-debug.log
 yarn-error.log
 testem.log
 /typings
 
-# System Files
+# Logs
+logs
+*.log
+
+# System files
 .DS_Store
 Thumbs.db
 
+# Nx
 .nx/cache
 .nx/workspace-data
+.nx/polygraph
+.nx/self-healing
 .cursor/rules/nx-rules.mdc
 .github/instructions/nx.instructions.md
 
+# Claude Code local state
 .claude/worktrees
 .claude/settings.local.json
-.nx/polygraph
-.nx/self-healing
+
+# AWS / CDK
+infra/cdk.out
+infra/.cdk.staging
+
+# Playwright
+test-results
+playwright-report
+blob-report
+playwright/.cache
+
+.angular
+
+__screenshots__/

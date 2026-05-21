@@ -1,6 +1,21 @@
-# Add files here to ignore them from prettier formatting
-/dist
-/coverage
-/.nx/cache
-/.nx/workspace-data
+# Build artifacts
+dist
+build
+coverage
+out-tsc
+.nx/cache
+.nx/workspace-data
 .nx/self-healing
+
+# Dependencies
+node_modules
+
+# Generated
+pnpm-lock.yaml
+package-lock.json
+
+# Other
+.angular
+.next
+.vercel
+infra/cdk.out
