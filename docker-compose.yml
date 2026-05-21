@@ -1,0 +1,23 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    container_name: clouddocs-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: clouddocs
+      POSTGRES_USER: clouddocs
+      POSTGRES_PASSWORD: clouddocs
+    # 5432 is a system Postgres; 5433 is taken by another project's container.
+    # Override with COMPOSE_POSTGRES_PORT if 5434 collides too.
+    ports:
+      - '${COMPOSE_POSTGRES_PORT:-5434}:5432'
+    volumes:
+      - clouddocs-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U clouddocs -d clouddocs']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  clouddocs-postgres-data:

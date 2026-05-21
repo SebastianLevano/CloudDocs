@@ -172,3 +172,65 @@ npx cdk destroy --all                   # Bajar todo (cuidado en prod)
 pnpm graph                              # Grafo Nx del workspace (no incluye infra/)
 pnpm nx affected -t lint test build     # Lo que correrá CI
 ```
+
+---
+
+## Phase 2A — Auth & multi-tenant backend foundations (2026-05-21)
+
+Local-only work that sets up the data + libs needed to ship the auth Lambdas
+in Phase 2B. Nothing has been deployed to AWS in this sub-phase.
+
+### Delivered
+
+| Layer           | Files / changes                                                                                                                                                          |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Local DB        | `docker-compose.yml` (Postgres 17 + pgvector 0.8.2 on `localhost:5434`)                                                                                                  |
+| Migrations      | `tools/migrations/*.sql` + pnpm scripts (`db:migrate:up`, `db:migrate:down`, `db:migrate:create`, `db:reset`)                                                            |
+| Schema (0001)   | `users`, `organizations`, `memberships`, `invitations`, `refresh_tokens` + extensions `pgcrypto`, `citext`, `vector` + `set_updated_at` trigger                          |
+| Shared types    | `libs/shared-types/src/schemas/{auth,orgs}.ts` (zod v4 — `RegisterDto`, `LoginDto`, `AuthSession`, `MeResponse`, `Role`, `OrganizationSchema`, `MembershipSchema`, etc.) |
+| DB client       | `apps/api/src/lib/db/client.ts` — pg locally, `@neondatabase/serverless` against Neon (auto-detected from URL). `query`, `queryOne`, `withTransaction`.                  |
+| Auth lib        | `apps/api/src/lib/auth/jwt.ts` (EdDSA / jose), `password.ts` (argon2id 64 MiB / 3 iters), `tools/scripts/generate-jwt-keys.ts`                                           |
+| Errors + logger | `apps/api/src/lib/errors.ts` (`AppError` hierarchy), `lib/logger.ts` (pino, redacts auth/cookie/password)                                                                |
+| Repositories    | `OrgScopedRepository` base, `UsersRepo`, `OrgsRepo`, `MembershipsRepo`, `RefreshTokensRepo`                                                                              |
+| Middlewares     | `with-request-logger`, `with-error-handler`, `with-json-body`, `with-validation`, `with-auth`, `with-org-scope` + `compose()` helper                                     |
+| Tests           | 5 spec files in api (18 tests) + 1 in shared-types (11 tests). All green.                                                                                                |
+
+### Important non-obvious decisions (2A)
+
+- **Postgres on port 5434.** Both `:5432` (system Postgres) and `:5433` (a
+  `nexusflow-postgres` container from another project) were taken. Override
+  via `COMPOSE_POSTGRES_PORT` if needed.
+- **`argon2` added to `pnpm-workspace.yaml > allowBuilds`.** Required by
+  pnpm@11 supply-chain policy so the native bindings (`node-gyp-build`)
+  compile at install time.
+- **Row type constraint on `db/client.ts` is `object`, not `Record<string,
+unknown>`.** Stricter constraints force every row interface (`UserRow`
+  etc.) to carry a noise index signature for no value.
+- **Db client picks driver by URL host.** Local/loopback → `pg.Pool`,
+  anything else → `@neondatabase/serverless`'s `Pool`. Both expose the same
+  query/connect API so callers don't branch.
+- **JWTs are EdDSA (Ed25519), not HS256.** Asymmetric so future verifiers
+  (workers, edge functions) can verify with just the public key. Keys stay
+  in `.env.local` locally; Phase 2B will move them to Secrets Manager.
+- **Refresh tokens are opaque random 32-byte values, stored only as
+  SHA-256 hashes.** The plaintext lives in the user's httpOnly cookie. DB
+  never sees the plaintext, so a DB leak alone can't issue valid refreshes.
+- **`OrgScopedRepository` requires `orgId` at construction.** Subclasses use
+  `scopedQuery()` which prepends `org_id` as `$1`, so handlers that forget
+  the filter just fail to compile / write nonsense queries that don't match.
+  This is the primary cross-tenant safeguard.
+- **Pino logs silenced in tests via `LOG_LEVEL=silent` in
+  `apps/api/src/test-setup.ts`** so vitest output stays readable.
+
+### Open items for Phase 2B (next sub-sprint)
+
+1. **Sebastián provisions Neon project** `clouddocs` with branch `dev`,
+   shares `DATABASE_URL`. Tracked in task 10.
+2. Move `JWT_PRIVATE_KEY`, `JWT_PUBLIC_KEY`, `DATABASE_URL` into AWS Secrets
+   Manager (single JSON secret `clouddocs/dev/api`).
+3. Implement 5 auth Lambda handlers (`register`, `login`, `refresh`,
+   `logout`, `me`) + wire them into `infra/lib/stacks/api-stack.ts`.
+4. Add a migration step to `deploy-api.yml` so prod migrations run before
+   Lambda deploy.
+5. Integration tests against the live Docker Postgres (gated by env so they
+   run in CI but not in unit-only runs).

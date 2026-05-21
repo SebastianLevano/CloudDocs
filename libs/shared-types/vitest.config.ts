@@ -5,11 +5,10 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
-    setupFiles: ['src/test-setup.ts'],
     include: ['src/**/*.{test,spec}.ts'],
     coverage: {
       provider: 'v8',
-      reportsDirectory: '../../coverage/apps/api',
+      reportsDirectory: '../../coverage/libs/shared-types',
     },
   },
 });

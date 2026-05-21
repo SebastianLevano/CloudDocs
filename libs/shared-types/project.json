@@ -14,6 +14,21 @@
         "tsConfig": "libs/shared-types/tsconfig.lib.json",
         "assets": ["libs/shared-types/*.md"]
       }
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "vitest run --config libs/shared-types/vitest.config.ts"
+      },
+      "cache": true,
+      "inputs": ["default", "^production"]
+    },
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "tsc -p libs/shared-types/tsconfig.lib.json --noEmit"
+      },
+      "cache": true
     }
   }
 }
