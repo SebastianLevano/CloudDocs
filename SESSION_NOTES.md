@@ -234,3 +234,56 @@ unknown>`.** Stricter constraints force every row interface (`UserRow`
    Lambda deploy.
 5. Integration tests against the live Docker Postgres (gated by env so they
    run in CI but not in unit-only runs).
+
+---
+
+## Phase 2B local — auth handlers + integration tests (2026-05-22)
+
+Backend handlers are implemented and exercised end-to-end against the local
+Docker Postgres. **Nothing has been deployed to AWS in this sub-phase.** Deploy
+lands in 2B-deploy after the region move (task #14) and the wire-up of Secrets
+Manager (task #15).
+
+### Delivered
+
+| File                                                       | Notes                                                                                                                              |
+| ---------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `apps/api/src/handlers/auth/register/{handler,usecase}.ts` | Creates user + org + owner membership in one transaction; issues access + refresh tokens; sets refresh cookie.                     |
+| `apps/api/src/handlers/auth/login/{handler,usecase}.ts`    | argon2 verify; 401 opaque message (no email-vs-password distinction).                                                              |
+| `apps/api/src/handlers/auth/refresh/{handler,usecase}.ts`  | Rotates refresh: revokes the presented token, issues a new one. Old cookie cannot be replayed.                                     |
+| `apps/api/src/handlers/auth/logout/handler.ts`             | Idempotent. Revokes if cookie matches; always clears cookie and returns 204.                                                       |
+| `apps/api/src/handlers/auth/me/handler.ts`                 | Loads fresh memberships from DB (not from JWT claims) so membership changes are reflected immediately.                             |
+| `apps/api/src/handlers/auth/_shared/issue-session.ts`      | Shared logic between register/login/refresh; converts repo rows to the API DTO shape.                                              |
+| `apps/api/src/lib/auth/cookies.ts`                         | `cdx_rt` cookie (Path=/v1/auth, HttpOnly, SameSite=Lax, Secure toggled by `COOKIE_SECURE` env).                                    |
+| `apps/api/src/handlers/auth/auth.integration.spec.ts`      | Register → login → /me → refresh → logout + edge cases (dup email, dup slug, wrong password, no token, replayed refresh). 5 tests. |
+
+### Important non-obvious decisions (2B-local)
+
+- **Refresh cookie scoped to `/v1/auth`.** Browser only ships it on the four
+  auth endpoints. Documents/search/etc. routes never see it.
+- **Login's 401 message is intentionally opaque** ("Invalid email or
+  password.") — never distinguishes "user not found" vs "wrong password"
+  so attackers can't enumerate accounts.
+- **`refreshUseCase` revokes the old token, then issues a new one** —
+  outside the original transaction. If issuance fails, the user is logged
+  out, which is the safe failure mode.
+- **`/me` loads fresh memberships from DB instead of trusting the JWT's
+  `memberships` claim.** Means membership changes (org joined, role
+  updated) take effect immediately, not after the access token expires.
+- **Integration tests gated by `RUN_INTEGRATION=1` AND a localhost URL.**
+  The suite TRUNCATEs the auth tables; running against a Neon URL by
+  mistake would wipe real data. Both conditions must pass — running plain
+  `pnpm test api` cannot ever truncate anything.
+- **`pnpm test:integration` script** uses `dotenv-cli -v RUN_INTEGRATION=1`
+  to load `.env.local` (for JWT keys) and set the gate variable in one go.
+- **`vitest.config.ts` had to mirror `tsconfig.base.json` path aliases.**
+  Vitest doesn't read tsconfig `paths` by default; without explicit
+  `resolve.alias`, `@clouddocs/shared-types` imports fail at test time.
+
+### State after 2B-local
+
+- 23 tests green (18 unit + 5 integration against Docker).
+- 5 Lambda handlers ready to plug into CDK.
+- Db client agnostic to driver (Docker pg ↔ Neon serverless).
+- Open for 2B-deploy: tasks #14 (region move), #15 (Secrets Manager + CDK
+  wire-up), #16 (deploy + smoke tests).
