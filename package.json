@@ -20,7 +20,8 @@
     "db:migrate:up": "dotenv -e .env.local -- node-pg-migrate -m tools/migrations -d DATABASE_URL -j sql up",
     "db:migrate:down": "dotenv -e .env.local -- node-pg-migrate -m tools/migrations -d DATABASE_URL -j sql down",
     "db:migrate:create": "dotenv -e .env.local -- node-pg-migrate -m tools/migrations -d DATABASE_URL -j sql create",
-    "db:reset": "docker exec clouddocs-postgres psql -U clouddocs -d clouddocs -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;' && pnpm db:migrate:up"
+    "db:reset": "docker exec clouddocs-postgres psql -U clouddocs -d clouddocs -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;' && pnpm db:migrate:up",
+    "test:integration": "dotenv -e .env.local -v RUN_INTEGRATION=1 -- vitest run --config apps/api/vitest.config.ts"
   },
   "devDependencies": {
     "@angular-devkit/core": "~21.2.0",
