@@ -6,6 +6,7 @@ import {
   emptyResponse,
   withErrorHandler,
   withRequestLogger,
+  withSecrets,
   type LambdaHandler,
 } from '../../../middlewares';
 
@@ -14,13 +15,15 @@ import {
  * token is already revoked we return 204 and clear the cookie, so the
  * client never has to handle a logout-specific error path.
  */
-export const handler: LambdaHandler = withRequestLogger(
-  compose(withErrorHandler)(async (ctx) => {
-    const cookieToken = readRefreshCookie(ctx.event.cookies);
-    if (cookieToken) {
-      const row = await RefreshTokensRepo.findActiveByHash(hashRefreshToken(cookieToken));
-      if (row) await RefreshTokensRepo.revoke(row.id);
-    }
-    return emptyResponse(204, { cookies: [buildClearedRefreshCookie()] });
-  }),
+export const handler: LambdaHandler = withSecrets(
+  withRequestLogger(
+    compose(withErrorHandler)(async (ctx) => {
+      const cookieToken = readRefreshCookie(ctx.event.cookies);
+      if (cookieToken) {
+        const row = await RefreshTokensRepo.findActiveByHash(hashRefreshToken(cookieToken));
+        if (row) await RefreshTokensRepo.revoke(row.id);
+      }
+      return emptyResponse(204, { cookies: [buildClearedRefreshCookie()] });
+    }),
+  ),
 );

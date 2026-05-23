@@ -17,7 +17,10 @@ export class StorageStack extends cdk.Stack {
     const { transitionToIaDays, expireUnaccessedDays } = config.uploadsLifecycle;
 
     this.uploadsBucket = new s3.Bucket(this, 'UploadsBucket', {
-      bucketName: `${config.resourcePrefix}-uploads-${config.env.account}`,
+      // Region in the name keeps the bucket globally unique even after a
+      // recent destroy in another region (S3 reserves names for ~hours
+      // post-deletion, blocking same-name recreation).
+      bucketName: `${config.resourcePrefix}-uploads-${config.env.account}-${config.env.region}`,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       encryption: s3.BucketEncryption.S3_MANAGED,
       enforceSSL: true,

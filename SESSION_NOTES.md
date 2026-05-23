@@ -287,3 +287,95 @@ Manager (task #15).
 - Db client agnostic to driver (Docker pg ↔ Neon serverless).
 - Open for 2B-deploy: tasks #14 (region move), #15 (Secrets Manager + CDK
   wire-up), #16 (deploy + smoke tests).
+
+---
+
+## Phase 2B deploy — auth API live in sa-east-1 (2026-05-23)
+
+### What landed
+
+1. **Region pivot us-east-1 → sa-east-1.** App stacks (network, storage,
+   api) destroyed in us-east-1 and re-deployed to sa-east-1 to colocate
+   compute with the Neon `clouddocs` DB (Sebastián's free-tier Neon project
+   is pinned to sa-east-1 and contains data we can't move).
+2. **Observability stack stays in us-east-1.** AWS publishes
+   `EstimatedCharges` metric only in us-east-1, so the billing alarm has to
+   live there regardless of app region. SNS subscription needs Sebastián
+   to click the re-confirmation email.
+3. **Secrets Manager.** Single JSON secret `clouddocs/dev/api` with
+   `DATABASE_URL`, `JWT_PRIVATE_KEY`, `JWT_PUBLIC_KEY`. Created by CDK
+   as an empty resource (values never touch CloudFormation); populated
+   with `pnpm secrets:put:dev` from `.env.local`.
+4. **5 auth Lambdas wired** (`clouddocs-dev-auth-{register,login,refresh,
+logout,me}`). Each has IAM permission to read the secret; each runs
+   `withSecrets` before the request pipeline so the Secrets Manager fetch
+   is cached per cold start.
+5. **Smoke tests passed.** Register, login, /me, unauthenticated /me — all
+   return correct status codes and bodies against the live endpoint.
+
+### Live endpoint
+
+```
+https://ngm5oizp91.execute-api.sa-east-1.amazonaws.com
+  GET  /v1/health
+  POST /v1/auth/register
+  POST /v1/auth/login
+  POST /v1/auth/refresh
+  POST /v1/auth/logout
+  GET  /v1/auth/me
+```
+
+Cold start ~4s the first time (hash-wasm + Neon connect + Secrets Manager
+fetch), warm ~200-400ms.
+
+### Important non-obvious decisions (2B-deploy)
+
+- **Switched argon2 → hash-wasm.** Native argon2 libs (`argon2`,
+  `@node-rs/argon2`) ship platform-specific `.node` binaries that esbuild
+  can't bundle for Lambda Linux ARM64. `hash-wasm` is pure WASM inlined as
+  base64 — esbuild bundles it as plain JS, no Docker bundling, no Lambda
+  Layer. Trade-off: ~2-3× slower than native (~200 ms vs ~70 ms for one
+  hash). Acceptable for portfolio; upgrade path is to switch back to
+  native via a Lambda Layer if traffic ever justifies it.
+- **S3 bucket name now includes region.** Was
+  `clouddocs-dev-uploads-637423184400`. The us-east-1 bucket was deleted
+  and S3 reserves names for ~hours after deletion, blocking same-name
+  recreation in another region. New format:
+  `clouddocs-dev-uploads-${account}-${region}` — globally unique even
+  across region moves.
+- **`addDependency` cascades destroys.** `cdk destroy` on api/network/
+  storage also deleted observability because `observability.addDependency
+(api)` in `bin/clouddocs.ts`. Had to re-deploy observability separately.
+- **CORS: `allowCredentials: true` requires explicit origins.** Can't
+  combine with `allowOrigins: '*'`. Set to
+  `['http://localhost:4200']` for dev; Phase 6 adds prod origins.
+- **CDK config defaults to sa-east-1 now.** `infra/lib/config.ts` falls
+  back to sa-east-1 when neither `CDK_DEFAULT_REGION` nor `AWS_REGION` is
+  set. Observability stack still hardcoded to us-east-1.
+- **`withSecrets` middleware wraps each Lambda handler.** Loads the
+  Secrets Manager JSON into `process.env` once per cold start (cached
+  promise) so subsequent invocations are no-ops. Locally (no
+  `SECRET_ARN`), it's a no-op and `.env.local` stays authoritative.
+- **`tools/scripts/populate-dev-secrets.ts`** reads `.env.local` and
+  uploads `DATABASE_URL` + JWT keys via `PutSecretValueCommand`. Run
+  with `pnpm secrets:put:dev` after any `.env.local` rotation.
+
+### Stack inventory (after 2B-deploy)
+
+| Region    | Stack                       | Resources                                                        |
+| --------- | --------------------------- | ---------------------------------------------------------------- |
+| sa-east-1 | clouddocs-dev-network       | empty placeholder                                                |
+| sa-east-1 | clouddocs-dev-storage       | S3 uploads bucket `clouddocs-dev-uploads-637423184400-sa-east-1` |
+| sa-east-1 | clouddocs-dev-api           | HTTP API + 6 Lambdas (health + 5 auth) + Secrets Manager secret  |
+| sa-east-1 | CDKToolkit                  | bootstrap                                                        |
+| us-east-1 | clouddocs-dev-observability | SNS topic + billing alarm                                        |
+| us-east-1 | CDKToolkit                  | bootstrap (legacy, free)                                         |
+
+### Open items
+
+1. **SNS subscription re-confirmation.** Email to `jsebas.01cap@gmail.com`
+   needs the "Confirm subscription" click — without it, billing alarm
+   fires silently.
+2. **MFA on root AWS account.** Best-practice; still open from Phase 1.
+3. **CORS production origins.** Add Vercel preview URLs + final domain
+   in Phase 6.

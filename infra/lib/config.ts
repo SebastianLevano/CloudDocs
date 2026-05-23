@@ -36,7 +36,10 @@ const STAGE_DEFAULTS: Record<Stage, Pick<InfraConfig, 'billingAlarmUsd' | 'uploa
 export function loadConfig(stageInput?: string): InfraConfig {
   const stage = parseStage(stageInput);
   const account = process.env.CDK_DEFAULT_ACCOUNT ?? process.env.AWS_ACCOUNT_ID;
-  const region = process.env.CDK_DEFAULT_REGION ?? process.env.AWS_REGION ?? 'us-east-1';
+  // sa-east-1 colocates compute with the Neon free-tier project (also sa-east-1).
+  // Observability stack stays pinned to us-east-1 (see bin/clouddocs.ts) because
+  // AWS publishes the EstimatedCharges billing metric there only.
+  const region = process.env.CDK_DEFAULT_REGION ?? process.env.AWS_REGION ?? 'sa-east-1';
 
   if (!account) {
     throw new Error(
