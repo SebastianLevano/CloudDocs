@@ -2,6 +2,7 @@ import * as path from 'node:path';
 import * as cdk from 'aws-cdk-lib';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import * as apigwv2 from 'aws-cdk-lib/aws-apigatewayv2';
+import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import { HttpLambdaIntegration } from 'aws-cdk-lib/aws-apigatewayv2-integrations';
 import type { Construct } from 'constructs';
 import type { InfraConfig } from '../config';
@@ -12,23 +13,74 @@ export interface ApiStackProps extends cdk.StackProps {
 }
 
 const WORKSPACE_ROOT = path.resolve(__dirname, '..', '..', '..');
-const HEALTH_HANDLER_ENTRY = path.join(
-  WORKSPACE_ROOT,
-  'apps',
-  'api',
-  'src',
-  'handlers',
-  'health',
-  'handler.ts',
-);
+const HANDLERS_ROOT = path.join(WORKSPACE_ROOT, 'apps', 'api', 'src', 'handlers');
+const HEALTH_HANDLER_ENTRY = path.join(HANDLERS_ROOT, 'health', 'handler.ts');
+
+interface AuthRoute {
+  readonly id: string;
+  readonly handlerDir: string;
+  readonly method: apigwv2.HttpMethod;
+  readonly path: string;
+  readonly description: string;
+}
+
+const AUTH_ROUTES: readonly AuthRoute[] = [
+  {
+    id: 'Register',
+    handlerDir: 'register',
+    method: apigwv2.HttpMethod.POST,
+    path: '/v1/auth/register',
+    description: 'Create user + default org + owner membership. Issues access + refresh tokens.',
+  },
+  {
+    id: 'Login',
+    handlerDir: 'login',
+    method: apigwv2.HttpMethod.POST,
+    path: '/v1/auth/login',
+    description: 'Verify credentials and issue a new session.',
+  },
+  {
+    id: 'Refresh',
+    handlerDir: 'refresh',
+    method: apigwv2.HttpMethod.POST,
+    path: '/v1/auth/refresh',
+    description: 'Rotate refresh cookie + issue new access token.',
+  },
+  {
+    id: 'Logout',
+    handlerDir: 'logout',
+    method: apigwv2.HttpMethod.POST,
+    path: '/v1/auth/logout',
+    description: 'Revoke refresh token (idempotent) + clear cookie.',
+  },
+  {
+    id: 'Me',
+    handlerDir: 'me',
+    method: apigwv2.HttpMethod.GET,
+    path: '/v1/auth/me',
+    description: 'Return authenticated user + memberships.',
+  },
+];
 
 export class ApiStack extends cdk.Stack {
   readonly httpApi: apigwv2.HttpApi;
+  readonly apiSecret: secretsmanager.Secret;
 
   constructor(scope: Construct, id: string, props: ApiStackProps) {
     super(scope, id, props);
 
     const { config } = props;
+
+    // Single JSON secret holding all runtime values the API Lambdas need:
+    // DATABASE_URL, JWT_PRIVATE_KEY, JWT_PUBLIC_KEY. Populated out-of-band
+    // (`pnpm secrets:put:dev`) so values never touch CloudFormation.
+    this.apiSecret = new secretsmanager.Secret(this, 'ApiSecret', {
+      secretName: `clouddocs/${config.stage}/api`,
+      description:
+        'CloudDocs API runtime secrets (DATABASE_URL, JWT_PRIVATE_KEY, JWT_PUBLIC_KEY). ' +
+        'Populated outside CDK; CDK manages the resource lifecycle only.',
+      removalPolicy: config.stage === 'prod' ? cdk.RemovalPolicy.RETAIN : cdk.RemovalPolicy.DESTROY,
+    });
 
     const health = new NodejsHandler(this, 'Health', {
       functionName: `${config.resourcePrefix}-health`,
@@ -48,8 +100,10 @@ export class ApiStack extends cdk.Stack {
       apiName: `${config.resourcePrefix}-api`,
       description: 'CloudDocs public HTTP API (v2).',
       corsPreflight: {
-        // TODO Phase 6: replace with the actual Vercel frontend origin.
-        allowOrigins: ['*'],
+        // allowCredentials=true (needed for the refresh cookie) is incompatible
+        // with allowOrigins '*'. Enumerate explicit origins per stage.
+        // TODO Phase 6: add the prod Vercel + custom domain origins here.
+        allowOrigins: ['http://localhost:4200'],
         allowMethods: [
           apigwv2.CorsHttpMethod.GET,
           apigwv2.CorsHttpMethod.POST,
@@ -58,6 +112,7 @@ export class ApiStack extends cdk.Stack {
           apigwv2.CorsHttpMethod.OPTIONS,
         ],
         allowHeaders: ['authorization', 'content-type', 'x-request-id'],
+        allowCredentials: true,
         maxAge: cdk.Duration.hours(1),
       },
       disableExecuteApiEndpoint: false,
@@ -68,6 +123,37 @@ export class ApiStack extends cdk.Stack {
       methods: [apigwv2.HttpMethod.GET],
       integration: new HttpLambdaIntegration('HealthIntegration', health.function),
     });
+
+    // Auth Lambdas — one bundle per route so each can scale, log and be
+    // updated independently. They all share the same secret and runtime env.
+    for (const route of AUTH_ROUTES) {
+      const handler = new NodejsHandler(this, `Auth${route.id}`, {
+        functionName: `${config.resourcePrefix}-auth-${route.handlerDir}`,
+        entry: path.join(HANDLERS_ROOT, 'auth', route.handlerDir, 'handler.ts'),
+        environment: {
+          STAGE: config.stage,
+          SERVICE_VERSION: process.env.SERVICE_VERSION ?? '0.1.0',
+          SECRET_ARN: this.apiSecret.secretArn,
+          COOKIE_SECURE: 'true',
+          LOG_LEVEL: config.stage === 'prod' ? 'info' : 'debug',
+        },
+        memorySize: 512, // argon2 (WASM) needs ~70 MiB free; bump from 256.
+        timeout: cdk.Duration.seconds(15),
+        minify: config.stage === 'prod',
+        sourceMap: config.stage !== 'prod',
+        logRetention: logs.RetentionDays.TWO_WEEKS,
+        logRemovalPolicy:
+          config.stage === 'prod' ? cdk.RemovalPolicy.RETAIN : cdk.RemovalPolicy.DESTROY,
+      });
+
+      this.apiSecret.grantRead(handler.function);
+
+      this.httpApi.addRoutes({
+        path: route.path,
+        methods: [route.method],
+        integration: new HttpLambdaIntegration(`Auth${route.id}Integration`, handler.function),
+      });
+    }
 
     // TODO Phase 6: bind custom domain (api-dev.<domain>) via DomainName + ApiMapping.
     if (config.customDomain.enabled) {
@@ -83,6 +169,12 @@ export class ApiStack extends cdk.Stack {
     new cdk.CfnOutput(this, 'HealthCheckUrl', {
       value: `${this.httpApi.apiEndpoint}/v1/health`,
       description: 'Curl this after deploy to verify the slice end-to-end.',
+    });
+
+    new cdk.CfnOutput(this, 'ApiSecretArn', {
+      value: this.apiSecret.secretArn,
+      description: 'Secrets Manager ARN — populate with `aws secretsmanager put-secret-value`.',
+      exportName: `${config.resourcePrefix}-api-secret-arn`,
     });
   }
 }

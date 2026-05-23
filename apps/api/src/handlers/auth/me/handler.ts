@@ -8,6 +8,7 @@ import {
   withAuth,
   withErrorHandler,
   withRequestLogger,
+  withSecrets,
   type LambdaHandler,
 } from '../../../middlewares';
 import type { MeResponse } from '@clouddocs/shared-types';
@@ -18,17 +19,19 @@ import type { MeResponse } from '@clouddocs/shared-types';
  * changes (org joined, role updated) shouldn't have to wait for the access
  * token to expire to take effect on the client.
  */
-export const handler: LambdaHandler = withRequestLogger(
-  compose(withErrorHandler)(
-    withAuth(async (ctx) => {
-      const user = await UsersRepo.findById(ctx.user.id);
-      if (!user) throw new NotFoundError('User no longer exists.');
-      const memberships = await MembershipsRepo.listForUser(user.id);
-      const body: MeResponse = {
-        user: toPublicUser(user),
-        memberships: memberships.map(toMembership),
-      };
-      return jsonResponse(200, body);
-    }),
+export const handler: LambdaHandler = withSecrets(
+  withRequestLogger(
+    compose(withErrorHandler)(
+      withAuth(async (ctx) => {
+        const user = await UsersRepo.findById(ctx.user.id);
+        if (!user) throw new NotFoundError('User no longer exists.');
+        const memberships = await MembershipsRepo.listForUser(user.id);
+        const body: MeResponse = {
+          user: toPublicUser(user),
+          memberships: memberships.map(toMembership),
+        };
+        return jsonResponse(200, body);
+      }),
+    ),
   ),
 );
