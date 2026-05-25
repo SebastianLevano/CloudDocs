@@ -21,7 +21,7 @@
     "db:migrate:down": "dotenv -e .env.local -- node-pg-migrate -m tools/migrations -d DATABASE_URL -j sql down",
     "db:migrate:create": "dotenv -e .env.local -- node-pg-migrate -m tools/migrations -d DATABASE_URL -j sql create",
     "db:reset": "docker exec clouddocs-postgres psql -U clouddocs -d clouddocs -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;' && pnpm db:migrate:up",
-    "test:integration": "dotenv -e .env.local -v RUN_INTEGRATION=1 -- vitest run --config apps/api/vitest.config.ts",
+    "test:integration": "dotenv -e .env.local -v RUN_INTEGRATION=1 -- vitest run --config apps/api/vitest.config.ts --no-file-parallelism",
     "secrets:put:dev": "node --experimental-strip-types tools/scripts/populate-dev-secrets.ts"
   },
   "devDependencies": {
@@ -31,7 +31,9 @@
     "@angular/cli": "~21.2.0",
     "@angular/compiler-cli": "~21.2.0",
     "@angular/language-service": "~21.2.0",
+    "@aws-sdk/client-s3": "^3.1053.0",
     "@aws-sdk/client-secrets-manager": "^3.1052.0",
+    "@aws-sdk/s3-request-presigner": "^3.1053.0",
     "@commitlint/cli": "^19.8.1",
     "@commitlint/config-conventional": "^19.8.1",
     "@eslint/js": "^9.8.0",

@@ -9,6 +9,8 @@ import { withJsonBody } from './with-json-body';
 import { withRequestLogger } from './with-request-logger';
 import { withValidation } from './with-validation';
 import { withCsrf } from './with-csrf';
+import { withActiveOrg } from './with-active-org';
+import type { AuthenticatedContext } from './with-auth';
 
 function makeEvent(overrides: Partial<APIGatewayProxyEventV2> = {}): APIGatewayProxyEventV2 {
   return {
@@ -162,6 +164,64 @@ describe('withCsrf', () => {
       fakeContext,
     );
     expect(result.statusCode).toBe(204);
+  });
+});
+
+describe('withActiveOrg', () => {
+  const ORG_A = '11111111-1111-4111-8111-111111111111';
+  const ORG_B = '22222222-2222-4222-8222-222222222222';
+
+  function ctxWith(
+    memberships: Array<{ orgId: string; role: 'owner' | 'admin' | 'member' | 'viewer' }>,
+    headers: Record<string, string> = {},
+  ): AuthenticatedContext {
+    return {
+      event: makeEvent({ headers }),
+      lambdaContext: fakeContext,
+      correlationId: 'x',
+      log: { info: () => undefined, error: () => undefined } as any,
+      user: { id: 'u1', email: 'u@test.com', memberships },
+    } as AuthenticatedContext;
+  }
+
+  const echoOrg = withActiveOrg(async (ctx) => ({
+    statusCode: 200,
+    body: JSON.stringify({ orgId: ctx.orgId, role: ctx.role }),
+  }));
+
+  it('resolves the org from the X-Org-Id header and checks membership', async () => {
+    const res: any = await echoOrg(
+      ctxWith(
+        [
+          { orgId: ORG_A, role: 'owner' },
+          { orgId: ORG_B, role: 'viewer' },
+        ],
+        { 'x-org-id': ORG_B },
+      ),
+    );
+    expect(JSON.parse(res.body)).toEqual({ orgId: ORG_B, role: 'viewer' });
+  });
+
+  it('falls back to the sole membership when no header is sent', async () => {
+    const res: any = await echoOrg(ctxWith([{ orgId: ORG_A, role: 'owner' }]));
+    expect(JSON.parse(res.body).orgId).toBe(ORG_A);
+  });
+
+  it('rejects an org the user is not a member of (403)', async () => {
+    await expect(
+      echoOrg(ctxWith([{ orgId: ORG_A, role: 'owner' }], { 'x-org-id': ORG_B })),
+    ).rejects.toMatchObject({ statusCode: 403 });
+  });
+
+  it('400s when multiple memberships and no header (ambiguous)', async () => {
+    await expect(
+      echoOrg(
+        ctxWith([
+          { orgId: ORG_A, role: 'owner' },
+          { orgId: ORG_B, role: 'member' },
+        ]),
+      ),
+    ).rejects.toMatchObject({ statusCode: 400 });
   });
 });
 
