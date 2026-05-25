@@ -8,6 +8,7 @@ import { withErrorHandler } from './with-error-handler';
 import { withJsonBody } from './with-json-body';
 import { withRequestLogger } from './with-request-logger';
 import { withValidation } from './with-validation';
+import { withCsrf } from './with-csrf';
 
 function makeEvent(overrides: Partial<APIGatewayProxyEventV2> = {}): APIGatewayProxyEventV2 {
   return {
@@ -132,6 +133,35 @@ describe('withJsonBody + withValidation', () => {
     const body = JSON.parse(result.body);
     expect(body.error.code).toBe('validation_error');
     expect(Array.isArray(body.error.details)).toBe(true);
+  });
+});
+
+describe('withCsrf', () => {
+  const ok = async () => ({ statusCode: 204 });
+
+  it('rejects requests without the X-CDX-Client header (403 forbidden)', async () => {
+    const handler = withRequestLogger(compose(withErrorHandler, withCsrf)(ok));
+    const result: any = await handler(makeEvent({ headers: {} }), fakeContext);
+    expect(result.statusCode).toBe(403);
+    expect(JSON.parse(result.body).error.code).toBe('forbidden');
+  });
+
+  it('rejects an empty header value', async () => {
+    const handler = withRequestLogger(compose(withErrorHandler, withCsrf)(ok));
+    const result: any = await handler(
+      makeEvent({ headers: { 'x-cdx-client': '  ' } }),
+      fakeContext,
+    );
+    expect(result.statusCode).toBe(403);
+  });
+
+  it('passes through when the header is present', async () => {
+    const handler = withRequestLogger(compose(withErrorHandler, withCsrf)(ok));
+    const result: any = await handler(
+      makeEvent({ headers: { 'x-cdx-client': 'web' } }),
+      fakeContext,
+    );
+    expect(result.statusCode).toBe(204);
   });
 });
 

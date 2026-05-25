@@ -111,7 +111,10 @@ export class ApiStack extends cdk.Stack {
           apigwv2.CorsHttpMethod.DELETE,
           apigwv2.CorsHttpMethod.OPTIONS,
         ],
-        allowHeaders: ['authorization', 'content-type', 'x-request-id'],
+        // `x-cdx-client` is the CSRF marker header required by refresh/logout
+        // (see apps/api middlewares/with-csrf.ts); listing it here makes the
+        // browser preflight succeed for allowed origins only.
+        allowHeaders: ['authorization', 'content-type', 'x-request-id', 'x-cdx-client'],
         allowCredentials: true,
         maxAge: cdk.Duration.hours(1),
       },

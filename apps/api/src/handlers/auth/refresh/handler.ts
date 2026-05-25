@@ -2,6 +2,7 @@ import { readRefreshCookie } from '../../../lib/auth/cookies';
 import {
   compose,
   jsonResponse,
+  withCsrf,
   withErrorHandler,
   withRequestLogger,
   withSecrets,
@@ -11,7 +12,10 @@ import { refreshUseCase } from './usecase';
 
 export const handler: LambdaHandler = withSecrets(
   withRequestLogger(
-    compose(withErrorHandler)(async (ctx) => {
+    compose(
+      withErrorHandler,
+      withCsrf,
+    )(async (ctx) => {
       const cookieToken = readRefreshCookie(ctx.event.cookies);
       const result = await refreshUseCase(cookieToken, {
         userAgent: ctx.event.headers?.['user-agent'],

@@ -7,3 +7,4 @@ export * from './with-validation';
 export * from './with-auth';
 export * from './with-org-scope';
 export * from './with-secrets';
+export * from './with-csrf';
