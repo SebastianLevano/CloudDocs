@@ -53,7 +53,8 @@ function makeEvent(overrides: Partial<APIGatewayProxyEventV2> = {}): APIGatewayP
         userAgent: 'vitest',
       },
     },
-    headers: { 'user-agent': 'vitest' },
+    // `x-cdx-client` satisfies withCsrf on the cookie endpoints (refresh/logout).
+    headers: { 'user-agent': 'vitest', 'x-cdx-client': 'web' },
     isBase64Encoded: false,
     ...overrides,
   } as APIGatewayProxyEventV2;

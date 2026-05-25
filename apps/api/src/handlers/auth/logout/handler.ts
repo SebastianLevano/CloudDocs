@@ -4,6 +4,7 @@ import { RefreshTokensRepo } from '../../../repositories/refresh-tokens-repo';
 import {
   compose,
   emptyResponse,
+  withCsrf,
   withErrorHandler,
   withRequestLogger,
   withSecrets,
@@ -17,7 +18,10 @@ import {
  */
 export const handler: LambdaHandler = withSecrets(
   withRequestLogger(
-    compose(withErrorHandler)(async (ctx) => {
+    compose(
+      withErrorHandler,
+      withCsrf,
+    )(async (ctx) => {
       const cookieToken = readRefreshCookie(ctx.event.cookies);
       if (cookieToken) {
         const row = await RefreshTokensRepo.findActiveByHash(hashRefreshToken(cookieToken));

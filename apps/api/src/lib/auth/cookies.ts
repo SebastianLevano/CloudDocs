@@ -3,17 +3,34 @@
  *
  * - Name: `cdx_rt` (CloudDocs refresh token). Short for tighter Set-Cookie
  *   headers; recognised across the codebase.
- * - HttpOnly + SameSite=Lax so the browser ships it on top-level POSTs to
- *   `/v1/auth/refresh` and `/v1/auth/logout` but not on third-party requests.
- * - Secure flag toggled by env (`COOKIE_SECURE`) so local http://localhost
- *   dev still works while prod over HTTPS demands it.
+ * - HttpOnly so JavaScript can never read it (XSS can't exfiltrate it).
+ * - SameSite defaults to **None** because the SPA (Vercel / localhost) and the
+ *   API (`*.execute-api.<region>.amazonaws.com`) are on different sites, so the
+ *   browser only sends the cookie on cross-site XHR when SameSite=None. None
+ *   *requires* Secure, so {@link isSecure} forces it on in that mode.
+ *   Override with `COOKIE_SAMESITE=Lax` for same-site setups (e.g. a future
+ *   custom domain proxying the API) or local same-origin testing.
+ * - SameSite=None removes the implicit CSRF protection Lax gave us, so the
+ *   refresh/logout handlers additionally require the `X-CDX-Client` header
+ *   (see `middlewares/with-csrf.ts`): a forged cross-site request can't set a
+ *   custom header without a CORS preflight, which our origin allowlist blocks.
  * - Path scoped to `/v1/auth` so the cookie is only sent to auth endpoints,
  *   not to documents/search/etc.
  */
 export const REFRESH_COOKIE_NAME = 'cdx_rt';
 const COOKIE_PATH = '/v1/auth';
 
+type SameSiteMode = 'None' | 'Lax' | 'Strict';
+
+function sameSite(): SameSiteMode {
+  const value = process.env['COOKIE_SAMESITE'];
+  return value === 'Lax' || value === 'Strict' ? value : 'None';
+}
+
 function isSecure(): boolean {
+  // SameSite=None is invalid without Secure — browsers drop such cookies — so
+  // force it on regardless of COOKIE_SECURE when running in cross-site mode.
+  if (sameSite() === 'None') return true;
   return process.env['COOKIE_SECURE'] !== 'false';
 }
 
@@ -23,7 +40,7 @@ export function buildRefreshCookie(token: string, maxAgeSeconds: number): string
     `Path=${COOKIE_PATH}`,
     `Max-Age=${maxAgeSeconds}`,
     'HttpOnly',
-    'SameSite=Lax',
+    `SameSite=${sameSite()}`,
   ];
   if (isSecure()) parts.push('Secure');
   return parts.join('; ');
@@ -35,7 +52,7 @@ export function buildClearedRefreshCookie(): string {
     `Path=${COOKIE_PATH}`,
     'Max-Age=0',
     'HttpOnly',
-    'SameSite=Lax',
+    `SameSite=${sameSite()}`,
   ];
   if (isSecure()) parts.push('Secure');
   return parts.join('; ');

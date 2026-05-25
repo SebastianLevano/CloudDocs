@@ -15,9 +15,11 @@ costs cents per month at idle.
 
 ---
 
-> **Status — Phase 0 (Foundation) complete.**
-> Monorepo, frontend shell, backend healthcheck, shared libs and tooling are wired
-> up. Auth, uploads, AI pipeline and CDK deploy land in subsequent phases.
+> **Status — Phase 2 (Auth + multi-tenant orgs) complete.**
+> CDK stacks are deployed to AWS (`sa-east-1`), the JWT auth API is live
+> (register / login / refresh / logout / me) on Neon Postgres, and the Angular
+> SPA ships login, register, route guards, HTTP interceptors and a session
+> shell wired to the live API. Uploads, the AI pipeline and billing land next.
 
 ## Why this exists
 
@@ -125,9 +127,9 @@ demoable so the project never sits half-finished.
 | Phase | Theme                                          | Status  |
 | ----- | ---------------------------------------------- | ------- |
 | 0     | Workspace, tooling, libs, healthcheck handler  | ✅ Done |
-| 1     | CDK stacks (S3, API GW, observability)         | 🟡 Next |
-| 2     | Auth + multi-tenant orgs                       | ⏳      |
-| 3     | Upload + S3 storage                            | ⏳      |
+| 1     | CDK stacks (S3, API GW, observability)         | ✅ Done |
+| 2     | Auth + multi-tenant orgs (API + frontend UI)   | ✅ Done |
+| 3     | Upload + S3 storage                            | 🟡 Next |
 | 4     | AI pipeline (extract → summarize → classify)   | ⏳      |
 | 5     | Dashboard + full-text search                   | ⏳      |
 | 6     | Polish + production deploy                     | ⏳      |
