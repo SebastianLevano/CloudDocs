@@ -6,5 +6,6 @@ export * from './with-json-body';
 export * from './with-validation';
 export * from './with-auth';
 export * from './with-org-scope';
+export * from './with-active-org';
 export * from './with-secrets';
 export * from './with-csrf';

@@ -8,3 +8,4 @@
 export * from './schemas/health';
 export * from './schemas/auth';
 export * from './schemas/orgs';
+export * from './schemas/documents';

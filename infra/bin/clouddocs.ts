@@ -34,9 +34,10 @@ const storage = new StorageStack(app, `${config.resourcePrefix}-storage`, {
 
 const api = new ApiStack(app, `${config.resourcePrefix}-api`, {
   env: config.env,
-  description: 'API Gateway HTTP v2 + healthcheck Lambda. Custom domain wired up in Phase 6.',
+  description: 'API Gateway HTTP v2 + auth/document Lambdas. Custom domain wired up in Phase 6.',
   tags,
   config,
+  uploadsBucket: storage.uploadsBucket,
 });
 
 const observability = new ObservabilityStack(app, `${config.resourcePrefix}-observability`, {

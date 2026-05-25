@@ -3,6 +3,7 @@ import * as cdk from 'aws-cdk-lib';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import * as apigwv2 from 'aws-cdk-lib/aws-apigatewayv2';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
+import type * as s3 from 'aws-cdk-lib/aws-s3';
 import { HttpLambdaIntegration } from 'aws-cdk-lib/aws-apigatewayv2-integrations';
 import type { Construct } from 'constructs';
 import type { InfraConfig } from '../config';
@@ -10,6 +11,8 @@ import { NodejsHandler } from '../constructs/nodejs-handler';
 
 export interface ApiStackProps extends cdk.StackProps {
   readonly config: InfraConfig;
+  /** Uploads bucket (from StorageStack) the document Lambdas presign against. */
+  readonly uploadsBucket: s3.IBucket;
 }
 
 const WORKSPACE_ROOT = path.resolve(__dirname, '..', '..', '..');
@@ -59,6 +62,46 @@ const AUTH_ROUTES: readonly AuthRoute[] = [
     method: apigwv2.HttpMethod.GET,
     path: '/v1/auth/me',
     description: 'Return authenticated user + memberships.',
+  },
+];
+
+interface DocRoute {
+  readonly id: string;
+  /** Path under handlers/documents/ for the handler.ts file. */
+  readonly handlerDir: string;
+  readonly method: apigwv2.HttpMethod;
+  readonly path: string;
+  readonly description: string;
+}
+
+const DOC_ROUTES: readonly DocRoute[] = [
+  {
+    id: 'Create',
+    handlerDir: 'create',
+    method: apigwv2.HttpMethod.POST,
+    path: '/v1/documents',
+    description: 'Register a document and return a presigned S3 PUT URL.',
+  },
+  {
+    id: 'List',
+    handlerDir: 'list',
+    method: apigwv2.HttpMethod.GET,
+    path: '/v1/documents',
+    description: 'Keyset-paginated list of the active org documents.',
+  },
+  {
+    id: 'Complete',
+    handlerDir: 'complete',
+    method: apigwv2.HttpMethod.POST,
+    path: '/v1/documents/{id}/complete',
+    description: 'Mark a document uploaded after the browser PUT succeeds.',
+  },
+  {
+    id: 'Download',
+    handlerDir: 'download',
+    method: apigwv2.HttpMethod.GET,
+    path: '/v1/documents/{id}/download',
+    description: 'Return a short-lived presigned GET URL for the object.',
   },
 ];
 
@@ -112,9 +155,10 @@ export class ApiStack extends cdk.Stack {
           apigwv2.CorsHttpMethod.OPTIONS,
         ],
         // `x-cdx-client` is the CSRF marker header required by refresh/logout
-        // (see apps/api middlewares/with-csrf.ts); listing it here makes the
-        // browser preflight succeed for allowed origins only.
-        allowHeaders: ['authorization', 'content-type', 'x-request-id', 'x-cdx-client'],
+        // (see apps/api middlewares/with-csrf.ts); `x-org-id` selects the active
+        // org for document routes (middlewares/with-active-org.ts). Listing them
+        // here makes the browser preflight succeed for allowed origins only.
+        allowHeaders: ['authorization', 'content-type', 'x-request-id', 'x-cdx-client', 'x-org-id'],
         allowCredentials: true,
         maxAge: cdk.Duration.hours(1),
       },
@@ -155,6 +199,38 @@ export class ApiStack extends cdk.Stack {
         path: route.path,
         methods: [route.method],
         integration: new HttpLambdaIntegration(`Auth${route.id}Integration`, handler.function),
+      });
+    }
+
+    // Document Lambdas — DB access (via the shared secret) plus read/write on the
+    // uploads bucket so they can presign PUT/GET URLs. The bytes flow browser↔S3
+    // directly; these functions only sign URLs and touch metadata.
+    for (const route of DOC_ROUTES) {
+      const handler = new NodejsHandler(this, `Doc${route.id}`, {
+        functionName: `${config.resourcePrefix}-documents-${route.handlerDir}`,
+        entry: path.join(HANDLERS_ROOT, 'documents', route.handlerDir, 'handler.ts'),
+        environment: {
+          STAGE: config.stage,
+          SERVICE_VERSION: process.env.SERVICE_VERSION ?? '0.1.0',
+          SECRET_ARN: this.apiSecret.secretArn,
+          UPLOADS_BUCKET: props.uploadsBucket.bucketName,
+          LOG_LEVEL: config.stage === 'prod' ? 'info' : 'debug',
+        },
+        timeout: cdk.Duration.seconds(15),
+        minify: config.stage === 'prod',
+        sourceMap: config.stage !== 'prod',
+        logRetention: logs.RetentionDays.TWO_WEEKS,
+        logRemovalPolicy:
+          config.stage === 'prod' ? cdk.RemovalPolicy.RETAIN : cdk.RemovalPolicy.DESTROY,
+      });
+
+      this.apiSecret.grantRead(handler.function);
+      props.uploadsBucket.grantReadWrite(handler.function);
+
+      this.httpApi.addRoutes({
+        path: route.path,
+        methods: [route.method],
+        integration: new HttpLambdaIntegration(`Doc${route.id}Integration`, handler.function),
       });
     }
 
