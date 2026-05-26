@@ -25,6 +25,9 @@ export class StorageStack extends cdk.Stack {
       encryption: s3.BucketEncryption.S3_MANAGED,
       enforceSSL: true,
       versioned: true,
+      // Emit S3 events to EventBridge so the Phase 4 ingest pipeline can react
+      // to ObjectCreated without per-bucket notification wiring.
+      eventBridgeEnabled: true,
       // dev only — protect prod once we get there.
       removalPolicy: config.stage === 'prod' ? cdk.RemovalPolicy.RETAIN : cdk.RemovalPolicy.DESTROY,
       autoDeleteObjects: config.stage !== 'prod',

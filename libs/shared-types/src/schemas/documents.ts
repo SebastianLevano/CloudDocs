@@ -36,6 +36,11 @@ export const DocumentSchema = z.object({
   sizeBytes: z.number().int().nonnegative(),
   status: DocumentStatusSchema,
   error: z.string().nullable(),
+  // Populated by the AI pipeline (Phase 4); null until processed.
+  category: z.string().nullable(),
+  tags: z.array(z.string()),
+  language: z.string().nullable(),
+  pageCount: z.number().int().nonnegative().nullable(),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
 });

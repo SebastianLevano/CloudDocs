@@ -15,6 +15,11 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 export const UPLOAD_URL_TTL_SECONDS = 5 * 60;
 export const DOWNLOAD_URL_TTL_SECONDS = 15 * 60;
 
+/** Key prefix for extracted plain text, mirroring the raw-uploads layout. */
+export function buildTextKey(orgId: string, documentId: string): string {
+  return `extracted-text/${orgId}/${documentId}.txt`;
+}
+
 let client: S3Client | undefined;
 
 function s3(): S3Client {
@@ -75,4 +80,31 @@ export async function presignDownload(
   });
   const url = await getSignedUrl(s3(), command, { expiresIn: DOWNLOAD_URL_TTL_SECONDS });
   return { url, expiresInSeconds: DOWNLOAD_URL_TTL_SECONDS };
+}
+
+/** Download an object's raw bytes (used by the extract worker). */
+export async function getObjectBytes(key: string): Promise<Buffer> {
+  const result = await s3().send(new GetObjectCommand({ Bucket: bucketName(), Key: key }));
+  if (!result.Body) throw new Error(`S3 object ${key} has no body.`);
+  const bytes = await result.Body.transformToByteArray();
+  return Buffer.from(bytes);
+}
+
+/** Download an object's text content (used by the analysis workers). */
+export async function getObjectText(key: string): Promise<string> {
+  const result = await s3().send(new GetObjectCommand({ Bucket: bucketName(), Key: key }));
+  if (!result.Body) throw new Error(`S3 object ${key} has no body.`);
+  return result.Body.transformToString('utf8');
+}
+
+/** Store UTF-8 text at a key (extracted document text). */
+export async function putText(key: string, text: string): Promise<void> {
+  await s3().send(
+    new PutObjectCommand({
+      Bucket: bucketName(),
+      Key: key,
+      Body: text,
+      ContentType: 'text/plain; charset=utf-8',
+    }),
+  );
 }

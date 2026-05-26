@@ -5,6 +5,7 @@ import { loadConfig } from '../lib/config';
 import { NetworkStack } from '../lib/stacks/network-stack';
 import { StorageStack } from '../lib/stacks/storage-stack';
 import { ApiStack } from '../lib/stacks/api-stack';
+import { PipelineStack } from '../lib/stacks/pipeline-stack';
 import { ObservabilityStack } from '../lib/stacks/observability-stack';
 
 const app = new cdk.App();
@@ -40,6 +41,15 @@ const api = new ApiStack(app, `${config.resourcePrefix}-api`, {
   uploadsBucket: storage.uploadsBucket,
 });
 
+const pipeline = new PipelineStack(app, `${config.resourcePrefix}-pipeline`, {
+  env: config.env,
+  description: 'Async AI pipeline: EventBridge + SQS + extract/summarize/classify workers.',
+  tags,
+  config,
+  uploadsBucket: storage.uploadsBucket,
+  apiSecret: api.apiSecret,
+});
+
 const observability = new ObservabilityStack(app, `${config.resourcePrefix}-observability`, {
   // Billing metrics only exist in us-east-1 — pin the stack there regardless of app region.
   env: { account: config.env.account, region: 'us-east-1' },
@@ -53,6 +63,8 @@ const observability = new ObservabilityStack(app, `${config.resourcePrefix}-obse
 // listing it here keeps the dependency graph readable.
 api.addDependency(storage);
 api.addDependency(network);
+pipeline.addDependency(storage);
+pipeline.addDependency(api); // shares the API secret
 observability.addDependency(api);
 
 app.synth();

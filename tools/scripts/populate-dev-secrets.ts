@@ -1,11 +1,12 @@
 /**
- * Uploads DATABASE_URL + JWT_PRIVATE_KEY + JWT_PUBLIC_KEY from `.env.local`
- * into the AWS Secrets Manager secret `clouddocs/{stage}/api`. Run after
- * each CDK deploy that touches the API stack:
+ * Uploads DATABASE_URL + JWT_PRIVATE_KEY + JWT_PUBLIC_KEY (required) and
+ * OPENAI_API_KEY (optional, Phase 4 AI workers) from `.env.local` into the AWS
+ * Secrets Manager secret `clouddocs/{stage}/api`. Run after each CDK deploy
+ * that touches the API stack:
  *
  *   AWS_PROFILE=clouddocs-dev pnpm secrets:put:dev
  *
- * Prereqs: `.env.local` exists with the three keys; AWS credentials in
+ * Prereqs: `.env.local` exists with the required keys; AWS credentials in
  * scope; the secret already created by CDK.
  */
 import { readFileSync } from 'node:fs';
@@ -16,6 +17,8 @@ const STAGE = process.env.STAGE ?? 'dev';
 const REGION = process.env.AWS_REGION ?? 'sa-east-1';
 const SECRET_NAME = `clouddocs/${STAGE}/api`;
 const REQUIRED_KEYS = ['DATABASE_URL', 'JWT_PRIVATE_KEY', 'JWT_PUBLIC_KEY'] as const;
+/** Uploaded only when present in .env.local. */
+const OPTIONAL_KEYS = ['OPENAI_API_KEY'] as const;
 
 function parseEnvLocal(): Record<string, string> {
   const path = resolve(process.cwd(), '.env.local');
@@ -56,13 +59,21 @@ async function main(): Promise<void> {
     }
     payload[key] = value;
   }
+  const uploaded: string[] = [...REQUIRED_KEYS];
+  for (const key of OPTIONAL_KEYS) {
+    const value = env[key];
+    if (typeof value === 'string' && value.length > 0) {
+      payload[key] = value;
+      uploaded.push(key);
+    }
+  }
 
   const client = new SecretsManagerClient({ region: REGION });
   await client.send(
     new PutSecretValueCommand({ SecretId: SECRET_NAME, SecretString: JSON.stringify(payload) }),
   );
 
-  console.log(`Updated ${SECRET_NAME} in ${REGION} with: ${REQUIRED_KEYS.join(', ')}`);
+  console.log(`Updated ${SECRET_NAME} in ${REGION} with: ${uploaded.join(', ')}`);
 }
 
 main().catch((err) => {
