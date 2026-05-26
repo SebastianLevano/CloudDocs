@@ -90,6 +90,13 @@ const DOC_ROUTES: readonly DocRoute[] = [
     description: 'Keyset-paginated list of the active org documents.',
   },
   {
+    id: 'Get',
+    handlerDir: 'get',
+    method: apigwv2.HttpMethod.GET,
+    path: '/v1/documents/{id}',
+    description: 'Document detail with its AI analyses.',
+  },
+  {
     id: 'Complete',
     handlerDir: 'complete',
     method: apigwv2.HttpMethod.POST,

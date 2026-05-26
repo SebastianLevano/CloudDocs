@@ -1,4 +1,7 @@
 import { ChangeDetectionStrategy, Component, inject, OnInit, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { RouterLink } from '@angular/router';
+import { timer } from 'rxjs';
 
 import type { Document } from '@clouddocs/shared-types';
 
@@ -6,6 +9,7 @@ import { apiErrorMessage } from '../../shared/utils/api-error';
 import { DocumentsService } from './documents.service';
 import { UploadDropzoneComponent } from './components/upload-dropzone.component';
 import { UploadService, validateFile, type UploadHandle } from './upload.service';
+import { isProcessing, statusBadgeClass } from './document-status';
 
 interface RejectedFile {
   name: string;
@@ -15,7 +19,7 @@ interface RejectedFile {
 @Component({
   selector: 'app-documents',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [UploadDropzoneComponent],
+  imports: [UploadDropzoneComponent, RouterLink],
   template: `
     <header class="mb-6 flex items-center justify-between">
       <div>
@@ -90,8 +94,17 @@ interface RejectedFile {
           </thead>
           <tbody>
             @for (doc of documents(); track doc.id) {
-              <tr class="border-b border-border/60">
-                <td class="py-3 text-text">{{ doc.filename }}</td>
+              <tr
+                class="cursor-pointer border-b border-border/60 transition hover:bg-surface-1"
+                [routerLink]="['/documents', doc.id]"
+                data-testid="doc-row"
+              >
+                <td class="py-3 text-text">
+                  {{ doc.filename }}
+                  @if (doc.category) {
+                    <span class="ml-2 text-xs text-text-dim">{{ doc.category }}</span>
+                  }
+                </td>
                 <td class="py-3 text-text-muted">{{ formatSize(doc.sizeBytes) }}</td>
                 <td class="py-3">
                   <span
@@ -118,6 +131,16 @@ export class DocumentsPage implements OnInit {
   protected readonly loadError = signal<string | null>(null);
   protected readonly uploads = signal<UploadHandle[]>([]);
   protected readonly rejected = signal<RejectedFile[]>([]);
+
+  constructor() {
+    // While any document is still being processed, re-fetch the list every 3s
+    // so statuses (and categories) update without a manual refresh.
+    timer(3000, 3000)
+      .pipe(takeUntilDestroyed())
+      .subscribe(() => {
+        if (this.documents().some((d) => isProcessing(d.status))) this.refresh();
+      });
+  }
 
   ngOnInit(): void {
     this.refresh();
@@ -188,16 +211,5 @@ export class DocumentsPage implements OnInit {
     });
   }
 
-  protected statusClass(status: Document['status']): string {
-    switch (status) {
-      case 'ready':
-        return 'border-emerald-500/40 bg-emerald-500/10 text-emerald-400';
-      case 'failed':
-        return 'border-danger/40 bg-danger/10 text-danger';
-      case 'pending_upload':
-        return 'border-border-strong bg-surface-3 text-text-dim';
-      default:
-        return 'border-brand-500/40 bg-brand-500/10 text-brand-300';
-    }
-  }
+  protected readonly statusClass = statusBadgeClass;
 }

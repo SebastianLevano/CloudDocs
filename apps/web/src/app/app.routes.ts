@@ -30,6 +30,12 @@ export const appRoutes: Route[] = [
         loadComponent: () =>
           import('./features/documents/documents.page').then((m) => m.DocumentsPage),
       },
+      {
+        path: 'documents/:id',
+        title: 'Document · CloudDocs AI',
+        loadComponent: () =>
+          import('./features/documents/document-detail.page').then((m) => m.DocumentDetailPage),
+      },
     ],
   },
   {

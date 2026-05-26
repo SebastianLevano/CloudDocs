@@ -21,6 +21,11 @@ export type DocumentRow = {
   s3_key: string;
   status: DocumentStatus;
   error: string | null;
+  text_s3_key: string | null;
+  page_count: number | null;
+  language: string | null;
+  category: string | null;
+  tags: string[];
   metadata: Record<string, unknown>;
   created_at: Date;
   updated_at: Date;
@@ -75,6 +80,92 @@ export class DocumentsRepo extends OrgScopedRepository {
   }
 
   /**
+   * Atomically claim a document for extraction: pending_upload|uploaded →
+   * extracting. Returns the row if this call won the claim, undefined if it was
+   * already claimed/processed (idempotency + race-safety against duplicate S3
+   * events and the client's /complete call).
+   */
+  async claimForExtraction(id: string): Promise<DocumentRow | undefined> {
+    const rows = await this.scopedQuery<DocumentRow>(
+      `UPDATE documents SET status = 'extracting'
+       WHERE org_id = $1 AND id = $2 AND status IN ('pending_upload', 'uploaded')
+       RETURNING *`,
+      [id],
+    );
+    return rows[0];
+  }
+
+  /** Record extraction output and move to `extracted` (extract worker). */
+  async markExtracted(
+    id: string,
+    input: { textS3Key: string; pageCount?: number; language?: string },
+  ): Promise<DocumentRow | undefined> {
+    const rows = await this.scopedQuery<DocumentRow>(
+      `UPDATE documents
+         SET status = 'extracted', text_s3_key = $3, page_count = $4, language = COALESCE($5, language)
+       WHERE org_id = $1 AND id = $2
+       RETURNING *`,
+      [id, input.textS3Key, input.pageCount ?? null, input.language ?? null],
+    );
+    return rows[0];
+  }
+
+  /** Move `extracted` → `analyzing` (first analyze worker to run; idempotent). */
+  async markAnalyzing(id: string): Promise<void> {
+    await this.scopedQuery(
+      `UPDATE documents SET status = 'analyzing'
+       WHERE org_id = $1 AND id = $2 AND status = 'extracted'`,
+      [id],
+    );
+  }
+
+  /** Persist the classifier output onto the document (classify worker). */
+  async setClassification(
+    id: string,
+    input: { category: string; tags: string[] },
+  ): Promise<DocumentRow | undefined> {
+    const rows = await this.scopedQuery<DocumentRow>(
+      `UPDATE documents SET category = $3, tags = $4
+       WHERE org_id = $1 AND id = $2
+       RETURNING *`,
+      [id, input.category, input.tags],
+    );
+    return rows[0];
+  }
+
+  /** Set the detected document language (summarize worker). */
+  async setLanguage(id: string, language: string): Promise<void> {
+    await this.scopedQuery(`UPDATE documents SET language = $3 WHERE org_id = $1 AND id = $2`, [
+      id,
+      language,
+    ]);
+  }
+
+  /**
+   * Atomically flips the document to `ready` once at least `requiredCount`
+   * distinct analysis kinds exist for it. Idempotent and race-safe: the worker
+   * that commits its analysis last is the one whose call sees the full set and
+   * wins; earlier calls match zero rows. Returns true if it set `ready`.
+   */
+  async markReadyIfAnalysesComplete(
+    id: string,
+    kinds: readonly string[],
+    requiredCount: number,
+  ): Promise<boolean> {
+    const rows = await this.scopedQuery<{ id: string }>(
+      `UPDATE documents SET status = 'ready'
+       WHERE org_id = $1 AND id = $2 AND status <> 'ready'
+         AND (
+           SELECT count(DISTINCT kind) FROM ai_analyses
+           WHERE document_id = $2 AND org_id = $1 AND kind = ANY($3)
+         ) >= $4
+       RETURNING id`,
+      [id, kinds as string[], requiredCount],
+    );
+    return rows.length > 0;
+  }
+
+  /**
    * Keyset pagination, newest first. Pass the previous page's last `id` as
    * `cursor` to get the next page. Fetches one extra row to know whether more
    * exist without a second count query.
@@ -117,6 +208,10 @@ export function toDocument(row: DocumentRow): Document {
     sizeBytes: Number(row.size_bytes),
     status: row.status,
     error: row.error,
+    category: row.category,
+    tags: row.tags ?? [],
+    language: row.language,
+    pageCount: row.page_count,
     createdAt: new Date(row.created_at).toISOString(),
     updatedAt: new Date(row.updated_at).toISOString(),
   };

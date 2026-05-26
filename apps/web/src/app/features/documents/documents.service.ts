@@ -6,6 +6,7 @@ import type {
   CreateDocumentDto,
   CreateDocumentResponse,
   Document,
+  DocumentDetailResponse,
   DocumentListResponse,
   DownloadResponse,
 } from '@clouddocs/shared-types';
@@ -52,6 +53,13 @@ export class DocumentsService {
     const params: Record<string, string> = { limit: String(limit) };
     if (cursor) params['cursor'] = cursor;
     return this.http.get<DocumentListResponse>(this.url, { headers: this.orgHeaders(), params });
+  }
+
+  /** Document detail + its AI analyses. */
+  get(id: string): Observable<DocumentDetailResponse> {
+    return this.http.get<DocumentDetailResponse>(`${this.url}/${id}`, {
+      headers: this.orgHeaders(),
+    });
   }
 
   download(id: string): Observable<DownloadResponse> {
