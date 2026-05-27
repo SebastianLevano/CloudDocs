@@ -15,17 +15,15 @@ costs cents per month at idle.
 
 ---
 
-> **Status — Phase 5 complete; Phase 6 (production deploy) in progress.**
-> The full MVP is live on AWS (`sa-east-1`): JWT auth + multi-tenant orgs,
-> document upload to S3 via presigned URLs, an async AI pipeline (extract →
+> **Status — MVP live (Phases 0–6 complete).**
+> The full MVP is deployed: the Angular SPA on Vercel talks to a serverless API
+> on AWS (`sa-east-1`) backed by Neon Postgres. Features: JWT auth + multi-tenant
+> orgs, document upload to S3 via presigned URLs, an async AI pipeline (extract →
 > summarize → classify with `gpt-4o-mini`), full-text search and a metrics
-> dashboard. The Angular SPA covers auth, upload, document detail with live AI
-> results, search/filters and the dashboard. Phase 6 wires the frontend to
-> Vercel for a public demo URL.
+> dashboard. Next up (Phase 7+): embeddings + semantic search, RAG chat, folders,
+> Stripe billing and OCR.
 
-<!-- Live demo: set once the Vercel deploy is connected, e.g. https://clouddocs.vercel.app -->
-
-**Live demo:** _coming soon (Vercel)._ · **API:** `https://ngm5oizp91.execute-api.sa-east-1.amazonaws.com/v1/health`
+**Live demo:** https://cloud-docs-theta.vercel.app · **API health:** `https://ngm5oizp91.execute-api.sa-east-1.amazonaws.com/v1/health`
 
 ## Why this exists
 
@@ -130,16 +128,16 @@ runs Prettier + ESLint on staged files via Husky pre-commit hooks.
 The work is sequenced into publishable phases. Each phase produces something
 demoable so the project never sits half-finished.
 
-| Phase | Theme                                          | Status         |
-| ----- | ---------------------------------------------- | -------------- |
-| 0     | Workspace, tooling, libs, healthcheck handler  | ✅ Done        |
-| 1     | CDK stacks (S3, API GW, observability)         | ✅ Done        |
-| 2     | Auth + multi-tenant orgs (API + frontend UI)   | ✅ Done        |
-| 3     | Upload + S3 storage                            | ✅ Done        |
-| 4     | AI pipeline (extract → summarize → classify)   | ✅ Done        |
-| 5     | Dashboard + full-text search                   | ✅ Done        |
-| 6     | Polish + production deploy (frontend → Vercel) | 🟡 In progress |
-| 7+    | Embeddings + RAG chat + folders + Stripe + OCR | ⏳             |
+| Phase | Theme                                          | Status  |
+| ----- | ---------------------------------------------- | ------- |
+| 0     | Workspace, tooling, libs, healthcheck handler  | ✅ Done |
+| 1     | CDK stacks (S3, API GW, observability)         | ✅ Done |
+| 2     | Auth + multi-tenant orgs (API + frontend UI)   | ✅ Done |
+| 3     | Upload + S3 storage                            | ✅ Done |
+| 4     | AI pipeline (extract → summarize → classify)   | ✅ Done |
+| 5     | Dashboard + full-text search                   | ✅ Done |
+| 6     | Polish + production deploy (frontend → Vercel) | ✅ Done |
+| 7+    | Embeddings + RAG chat + folders + Stripe + OCR | ⏳      |
 
 See [`docs/plan.md`](docs/plan.md) for the detailed architecture, data model,
 security model and AWS free-tier strategy.
