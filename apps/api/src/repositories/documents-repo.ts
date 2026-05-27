@@ -209,6 +209,63 @@ export class DocumentsRepo extends OrgScopedRepository {
     return { rows: page, nextCursor: hasMore ? (page[page.length - 1]?.id ?? null) : null };
   }
 
+  /**
+   * Hybrid search: fuse full-text (ts_rank over search_tsv) and semantic
+   * (cosine distance over chunk embeddings) rankings with Reciprocal Rank
+   * Fusion (RRF, k=60). Returns documents ranked by fused score, newest first
+   * on ties. status/category filters apply to the final result. `$1` is the org
+   * id (scopedQuery), `$2` the query text, `$3` the query vector.
+   */
+  async hybridSearch(opts: {
+    q: string;
+    queryVector: number[];
+    status?: DocumentStatus;
+    category?: string;
+    limit: number;
+  }): Promise<DocumentRow[]> {
+    const params: unknown[] = [opts.q, `[${opts.queryVector.join(',')}]`];
+    let p = 3; // $1 org (auto), $2 q, $3 vec
+    const add = (value: unknown): string => {
+      params.push(value);
+      return `$${++p}`;
+    };
+    const filters: string[] = [];
+    if (opts.status) filters.push(`d.status = ${add(opts.status)}`);
+    if (opts.category) filters.push(`d.category = ${add(opts.category)}`);
+    const limitPlaceholder = add(opts.limit);
+    const filterSql = filters.length ? `AND ${filters.join(' AND ')}` : '';
+
+    return this.scopedQuery<DocumentRow>(
+      `WITH q AS (SELECT websearch_to_tsquery('simple', $2) AS tsq, $3::vector AS vec),
+       fts AS (
+         SELECT d.id,
+                row_number() OVER (ORDER BY ts_rank(d.search_tsv, q.tsq) DESC, d.created_at DESC) AS rank
+         FROM documents d, q
+         WHERE d.org_id = $1 AND d.search_tsv @@ q.tsq
+         LIMIT 50
+       ),
+       sem AS (
+         SELECT e.document_id AS id,
+                row_number() OVER (ORDER BY min(e.embedding <=> q.vec)) AS rank
+         FROM embeddings e, q
+         WHERE e.org_id = $1
+         GROUP BY e.document_id
+         LIMIT 50
+       ),
+       fused AS (
+         SELECT id, sum(1.0 / (60 + rank)) AS score
+         FROM (SELECT id, rank FROM fts UNION ALL SELECT id, rank FROM sem) u
+         GROUP BY id
+       )
+       SELECT d.*
+       FROM fused f JOIN documents d ON d.id = f.id
+       WHERE d.org_id = $1 ${filterSql}
+       ORDER BY f.score DESC, d.created_at DESC
+       LIMIT ${limitPlaceholder}`,
+      params,
+    );
+  }
+
   /** Aggregate counters + a 14-day uploads series for the dashboard. */
   async getStats(): Promise<{
     total: number;

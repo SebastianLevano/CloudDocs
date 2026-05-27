@@ -15,7 +15,7 @@ import {
 } from '@clouddocs/shared-types';
 
 import { AppError } from '../errors';
-import type { AiProvider, AiResult, AiUsage } from './provider';
+import type { AiProvider, AiResult, AiUsage, EmbedResult } from './provider';
 import { SUMMARY_PROMPT_VERSION, SUMMARY_SYSTEM, summaryUserPrompt } from './prompts/summary/v1';
 import {
   CLASSIFY_PROMPT_VERSION,
@@ -24,11 +24,14 @@ import {
 } from './prompts/classify/v1';
 
 const MODEL = 'gpt-4o-mini';
+const EMBEDDING_MODEL = 'text-embedding-3-small';
 /** Bound input cost: ~6-8K tokens. gpt-4o-mini handles 128K but we don't need it. */
 const MAX_INPUT_CHARS = 24_000;
 /** gpt-4o-mini pricing (USD per token), 2025 rates. */
 const INPUT_USD_PER_TOKEN = 0.15 / 1_000_000;
 const OUTPUT_USD_PER_TOKEN = 0.6 / 1_000_000;
+/** text-embedding-3-small pricing (USD per token). */
+const EMBED_USD_PER_TOKEN = 0.02 / 1_000_000;
 
 const SUMMARY_JSON_SCHEMA: Record<string, unknown> = {
   type: 'object',
@@ -82,6 +85,30 @@ export class OpenAiProvider implements AiProvider {
     );
     const data = ClassifyResultSchema.parse(parsed);
     return { data, usage };
+  }
+
+  async embed(texts: string[]): Promise<EmbedResult> {
+    if (texts.length === 0) {
+      return { vectors: [], usage: { model: EMBEDDING_MODEL, promptVersion: 'embed.v1' } };
+    }
+    const response = await this.client.embeddings.create({
+      model: EMBEDDING_MODEL,
+      input: texts.map((t) => t.slice(0, MAX_INPUT_CHARS)),
+    });
+    // The API returns items with an `index`; sort to guarantee input order.
+    const vectors = [...response.data]
+      .sort((a, b) => a.index - b.index)
+      .map((d) => d.embedding as number[]);
+    const inputTokens = response.usage?.prompt_tokens;
+    return {
+      vectors,
+      usage: {
+        model: EMBEDDING_MODEL,
+        promptVersion: 'embed.v1',
+        ...(inputTokens != null ? { inputTokens } : {}),
+        ...(inputTokens != null ? { costUsd: inputTokens * EMBED_USD_PER_TOKEN } : {}),
+      },
+    };
   }
 
   private async complete(

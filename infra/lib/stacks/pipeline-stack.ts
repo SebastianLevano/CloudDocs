@@ -56,6 +56,7 @@ export class PipelineStack extends cdk.Stack {
     const ingestQueue = makeQueue('doc-ingest');
     const summarizeQueue = makeQueue('doc-summarize');
     const classifyQueue = makeQueue('doc-classify');
+    const embedQueue = makeQueue('doc-embed');
 
     // S3 ObjectCreated (raw-uploads/) → ingest queue.
     new events.Rule(this, 'DocUploadedRule', {
@@ -72,15 +73,19 @@ export class PipelineStack extends cdk.Stack {
       targets: [new targets.SqsQueue(ingestQueue)],
     });
 
-    // DocumentExtracted → fan out to both analysis queues.
+    // DocumentExtracted → fan out to the analysis + embedding queues.
     new events.Rule(this, 'DocExtractedRule', {
       ruleName: `${prefix}-doc-extracted`,
-      description: 'Fan out extracted documents to summarize + classify.',
+      description: 'Fan out extracted documents to summarize + classify + embed.',
       eventPattern: {
         source: [EVENT_SOURCE],
         detailType: [DOCUMENT_EXTRACTED],
       },
-      targets: [new targets.SqsQueue(summarizeQueue), new targets.SqsQueue(classifyQueue)],
+      targets: [
+        new targets.SqsQueue(summarizeQueue),
+        new targets.SqsQueue(classifyQueue),
+        new targets.SqsQueue(embedQueue),
+      ],
     });
 
     const defaultBus = events.EventBus.fromEventBusName(this, 'DefaultBus', 'default');
@@ -132,6 +137,12 @@ export class PipelineStack extends cdk.Stack {
       canPutEvents: false,
     });
     makeWorker('ClassifyWorker', 'classify', classifyQueue, {
+      memorySize: 512,
+      canWriteBucket: false,
+      canPutEvents: false,
+    });
+    // embed worker reads the extracted text + calls the embeddings API.
+    makeWorker('EmbedWorker', 'embed', embedQueue, {
       memorySize: 512,
       canWriteBucket: false,
       canPutEvents: false,

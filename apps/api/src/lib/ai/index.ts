@@ -1,6 +1,8 @@
-export type { AiProvider, AiResult, AiUsage } from './provider';
+export type { AiProvider, AiResult, AiUsage, EmbedResult } from './provider';
+export { EMBEDDING_DIMENSIONS } from './provider';
 export { OpenAiProvider } from './openai-provider';
 export { MockAiProvider } from './mock-provider';
+export { chunkText, type ChunkOptions } from './chunk';
 
 /**
  * Returns the AI provider for the current environment: the real OpenAI client

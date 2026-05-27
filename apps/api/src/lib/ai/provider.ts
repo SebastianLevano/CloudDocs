@@ -3,8 +3,8 @@
  * this, never on the OpenAI SDK directly, so we can swap providers (or a mock
  * in tests) without touching business logic.
  *
- * Embeddings + chat (RAG) land in a later phase; Phase 4 only needs the two
- * synchronous analysis calls.
+ * Chat (RAG) lands in a later phase; this covers the two analysis calls plus
+ * embeddings (Phase 7 semantic search).
  */
 import type { ClassifyResult, SummaryResult } from '@clouddocs/shared-types';
 
@@ -22,7 +22,18 @@ export interface AiResult<T> {
   usage: AiUsage;
 }
 
+/** Dimensions of the embedding model (text-embedding-3-small). */
+export const EMBEDDING_DIMENSIONS = 1536;
+
+export interface EmbedResult {
+  /** One vector per input text, in order. */
+  vectors: number[][];
+  usage: AiUsage;
+}
+
 export interface AiProvider {
   summarize(text: string): Promise<AiResult<SummaryResult>>;
   classify(text: string): Promise<AiResult<ClassifyResult>>;
+  /** Embed a batch of texts (document chunks or a search query). */
+  embed(texts: string[]): Promise<EmbedResult>;
 }
