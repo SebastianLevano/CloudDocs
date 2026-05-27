@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   CreateDocumentDtoSchema,
   DocumentListQuerySchema,
+  DocumentStatsSchema,
   MAX_UPLOAD_SIZE_BYTES,
 } from './documents';
 
@@ -40,5 +41,35 @@ describe('DocumentListQuerySchema', () => {
 
   it('caps limit at 100', () => {
     expect(() => DocumentListQuerySchema.parse({ limit: '101' })).toThrow();
+  });
+
+  it('accepts search + filter params and trims q', () => {
+    const parsed = DocumentListQuerySchema.parse({
+      q: '  invoice ',
+      status: 'ready',
+      category: 'Invoice',
+    });
+    expect(parsed.q).toBe('invoice');
+    expect(parsed.status).toBe('ready');
+    expect(parsed.category).toBe('Invoice');
+  });
+
+  it('rejects an unknown status', () => {
+    expect(() => DocumentListQuerySchema.parse({ status: 'bogus' })).toThrow();
+  });
+});
+
+describe('DocumentStatsSchema', () => {
+  it('accepts a well-formed stats payload', () => {
+    const v = {
+      total: 3,
+      ready: 2,
+      processing: 1,
+      failed: 0,
+      storageBytes: 4096,
+      analysesThisMonth: 4,
+      uploadsPerDay: [{ date: '2026-05-26', count: 2 }],
+    };
+    expect(DocumentStatsSchema.parse(v)).toEqual(v);
   });
 });

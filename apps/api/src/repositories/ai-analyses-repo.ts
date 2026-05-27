@@ -63,6 +63,15 @@ export class AiAnalysesRepo extends OrgScopedRepository {
     );
   }
 
+  /** Count of analyses created since the start of the current month (dashboard KPI). */
+  async countThisMonth(): Promise<number> {
+    const rows = await this.scopedQuery<{ n: string }>(
+      `SELECT count(*)::text AS n FROM ai_analyses
+       WHERE org_id = $1 AND created_at >= date_trunc('month', now())`,
+    );
+    return Number(rows[0]?.n ?? 0);
+  }
+
   /** Distinct count of the given kinds present for a document (for the ready-join). */
   async countKinds(documentId: string, kinds: readonly AnalysisKind[]): Promise<number> {
     const rows = await this.scopedQuery<{ n: string }>(

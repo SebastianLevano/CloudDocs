@@ -68,6 +68,30 @@ test('register → dashboard → logout', async ({ page }) => {
     }),
   );
   await page.route('**/v1/auth/logout', (route) => route.fulfill({ status: 204, body: '' }));
+  // The dashboard loads stats + recent docs on arrival — stub them so the test
+  // doesn't depend on the network.
+  await page.route(/\/v1\/documents\/stats/, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        total: 0,
+        ready: 0,
+        processing: 0,
+        failed: 0,
+        storageBytes: 0,
+        analysesThisMonth: 0,
+        uploadsPerDay: [],
+      }),
+    }),
+  );
+  await page.route(/\/v1\/documents\?/, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ documents: [], nextCursor: null }),
+    }),
+  );
 
   await page.goto('/auth/register');
 
@@ -80,10 +104,10 @@ test('register → dashboard → logout', async ({ page }) => {
 
   await page.getByTestId('submit').click();
 
-  // Landed on the authenticated dashboard with session data rendered.
+  // Landed on the authenticated dashboard.
   await expect(page).toHaveURL(/\/dashboard/);
   await expect(page.getByTestId('dashboard-heading')).toContainText('Ada Lovelace');
-  await expect(page.getByTestId('session-email')).toHaveText('ada@example.com');
+  await expect(page.getByTestId('kpis')).toBeVisible();
 
   // Sign out returns to login.
   await page.getByRole('button', { name: 'Sign out' }).click();

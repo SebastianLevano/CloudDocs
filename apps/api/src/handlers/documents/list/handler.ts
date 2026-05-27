@@ -25,7 +25,7 @@ export const handler: LambdaHandler = withSecrets(
           }
 
           const repo = new DocumentsRepo(ctx.orgId);
-          const { rows, nextCursor } = await repo.list(parsed.data.limit, parsed.data.cursor);
+          const { rows, nextCursor } = await repo.list(parsed.data);
           const body: DocumentListResponse = { documents: rows.map(toDocument), nextCursor };
           return jsonResponse(200, body);
         }),
