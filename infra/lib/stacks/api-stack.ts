@@ -249,6 +249,32 @@ export class ApiStack extends cdk.Stack {
       });
     }
 
+    // Chat Lambda — RAG over embeddings (DB + OpenAI via the shared secret). No
+    // bucket access: it reads chunks from Postgres, not S3. Longer timeout since
+    // it does retrieval + a chat completion.
+    const chat = new NodejsHandler(this, 'Chat', {
+      functionName: `${config.resourcePrefix}-chat`,
+      entry: path.join(HANDLERS_ROOT, 'chat', 'handler.ts'),
+      environment: {
+        STAGE: config.stage,
+        SERVICE_VERSION: process.env.SERVICE_VERSION ?? '0.1.0',
+        SECRET_ARN: this.apiSecret.secretArn,
+        LOG_LEVEL: config.stage === 'prod' ? 'info' : 'debug',
+      },
+      timeout: cdk.Duration.seconds(30),
+      minify: config.stage === 'prod',
+      sourceMap: config.stage !== 'prod',
+      logRetention: logs.RetentionDays.TWO_WEEKS,
+      logRemovalPolicy:
+        config.stage === 'prod' ? cdk.RemovalPolicy.RETAIN : cdk.RemovalPolicy.DESTROY,
+    });
+    this.apiSecret.grantRead(chat.function);
+    this.httpApi.addRoutes({
+      path: '/v1/chat',
+      methods: [apigwv2.HttpMethod.POST],
+      integration: new HttpLambdaIntegration('ChatIntegration', chat.function),
+    });
+
     // TODO Phase 6: bind custom domain (api-dev.<domain>) via DomainName + ApiMapping.
     if (config.customDomain.enabled) {
       throw new Error('Custom domain wiring not implemented yet — see Phase 6.');

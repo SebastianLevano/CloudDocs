@@ -34,12 +34,23 @@ import { isProcessing, statusBadgeClass } from './document-status';
             }
           </p>
         </div>
-        <span
-          class="shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider"
-          [class]="badgeClass(d.status)"
-          data-testid="detail-status"
-          >{{ d.status }}</span
-        >
+        <div class="flex shrink-0 items-center gap-3">
+          @if (d.status === 'ready') {
+            <a
+              [routerLink]="['/chat']"
+              [queryParams]="{ documentId: d.id }"
+              data-testid="chat-with-doc"
+              class="inline-flex h-8 items-center rounded-lg border border-border bg-surface-2 px-3 text-xs font-medium text-text transition hover:border-brand-500"
+              >💬 Chat with this document</a
+            >
+          }
+          <span
+            class="rounded-full border px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider"
+            [class]="badgeClass(d.status)"
+            data-testid="detail-status"
+            >{{ d.status }}</span
+          >
+        </div>
       </header>
 
       @if (processing()) {

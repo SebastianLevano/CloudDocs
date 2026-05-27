@@ -15,7 +15,8 @@ import {
 } from '@clouddocs/shared-types';
 
 import { AppError } from '../errors';
-import type { AiProvider, AiResult, AiUsage, EmbedResult } from './provider';
+import type { AiProvider, AiResult, AiUsage, ChatTurn, EmbedResult } from './provider';
+import { CHAT_PROMPT_VERSION } from './prompts/chat/v1';
 import { SUMMARY_PROMPT_VERSION, SUMMARY_SYSTEM, summaryUserPrompt } from './prompts/summary/v1';
 import {
   CLASSIFY_PROMPT_VERSION,
@@ -107,6 +108,27 @@ export class OpenAiProvider implements AiProvider {
         promptVersion: 'embed.v1',
         ...(inputTokens != null ? { inputTokens } : {}),
         ...(inputTokens != null ? { costUsd: inputTokens * EMBED_USD_PER_TOKEN } : {}),
+      },
+    };
+  }
+
+  async chat(turns: ChatTurn[]): Promise<AiResult<string>> {
+    const completion = await this.client.chat.completions.create({
+      model: MODEL,
+      messages: turns.map((t) => ({ role: t.role, content: t.content })),
+    });
+    const answer = completion.choices[0]?.message.content;
+    if (!answer) throw new AppError('ai_error', 'OpenAI returned no content.', 502);
+    const inputTokens = completion.usage?.prompt_tokens;
+    const outputTokens = completion.usage?.completion_tokens;
+    return {
+      data: answer,
+      usage: {
+        model: MODEL,
+        promptVersion: CHAT_PROMPT_VERSION,
+        ...(inputTokens != null ? { inputTokens } : {}),
+        ...(outputTokens != null ? { outputTokens } : {}),
+        costUsd: estimateCost(inputTokens, outputTokens),
       },
     };
   }
