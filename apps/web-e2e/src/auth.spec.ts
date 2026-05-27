@@ -49,6 +49,20 @@ async function stubAnonymousBoot(page: Page): Promise<void> {
   );
 }
 
+test('landing page links to register and login', async ({ page }) => {
+  await stubAnonymousBoot(page);
+
+  await page.goto('/');
+  // Hero CTA → register.
+  await page.getByTestId('hero-cta').click();
+  await expect(page).toHaveURL(/\/auth\/register/);
+
+  // Topbar "Sign in" → login.
+  await page.goto('/');
+  await page.getByTestId('nav-signin').click();
+  await expect(page).toHaveURL(/\/auth\/login/);
+});
+
 test('guests are redirected from a protected route to login', async ({ page }) => {
   await stubAnonymousBoot(page);
 

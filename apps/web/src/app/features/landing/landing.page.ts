@@ -1,8 +1,10 @@
 import { ChangeDetectionStrategy, Component } from '@angular/core';
+import { RouterLink } from '@angular/router';
 
 @Component({
   selector: 'app-landing',
   changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [RouterLink],
   template: `
     <main class="relative min-h-screen overflow-hidden">
       <!-- Background gradient mesh -->
@@ -31,12 +33,22 @@ import { ChangeDetectionStrategy, Component } from '@angular/core';
               alpha
             </span>
           </div>
-          <nav class="hidden items-center gap-6 text-sm text-text-muted md:flex">
-            <a class="hover:text-text" href="#features">Features</a>
-            <a class="hover:text-text" href="#architecture">Architecture</a>
-            <a class="hover:text-text" href="https://github.com" target="_blank" rel="noreferrer"
-              >GitHub</a
+          <nav class="flex items-center gap-4 text-sm md:gap-6">
+            <a class="hidden text-text-muted hover:text-text md:inline" href="#features"
+              >Features</a
             >
+            <a
+              routerLink="/auth/login"
+              class="text-text-muted transition hover:text-text"
+              data-testid="nav-signin"
+              >Sign in</a
+            >
+            <a
+              routerLink="/auth/register"
+              class="inline-flex h-9 items-center justify-center rounded-lg bg-brand-500 px-4 text-sm font-semibold text-white shadow-[0_0_24px_rgba(124,92,255,0.25)] transition hover:bg-brand-400"
+            >
+              Get started
+            </a>
           </nav>
         </div>
       </header>
@@ -48,7 +60,7 @@ import { ChangeDetectionStrategy, Component } from '@angular/core';
             class="mb-6 inline-flex items-center gap-2 rounded-full border border-border bg-surface-2/60 px-3 py-1 text-xs font-medium text-text-muted backdrop-blur"
           >
             <span class="h-1.5 w-1.5 rounded-full bg-emerald-400"></span>
-            Phase 0 · Workspace bootstrapped
+            Live · upload, AI summaries & search
           </div>
 
           <h1 class="text-5xl font-bold tracking-tight text-text sm:text-6xl lg:text-7xl">
@@ -68,18 +80,17 @@ import { ChangeDetectionStrategy, Component } from '@angular/core';
 
           <div class="mt-10 flex flex-wrap items-center gap-4">
             <a
-              href="#features"
+              routerLink="/auth/register"
+              data-testid="hero-cta"
               class="inline-flex h-11 items-center justify-center rounded-lg bg-brand-500 px-6 text-sm font-semibold text-white shadow-[0_0_24px_rgba(124,92,255,0.25)] transition hover:bg-brand-400"
             >
-              Explore features
+              Get started — it's free
             </a>
             <a
-              href="https://github.com"
-              target="_blank"
-              rel="noreferrer"
+              href="#features"
               class="inline-flex h-11 items-center justify-center rounded-lg border border-border bg-surface-2/60 px-6 text-sm font-semibold text-text backdrop-blur transition hover:border-border-strong hover:bg-surface-3"
             >
-              View source ↗
+              Explore features
             </a>
           </div>
         </div>
