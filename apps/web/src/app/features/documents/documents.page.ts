@@ -72,7 +72,7 @@ interface RejectedFile {
         type="search"
         [value]="search()"
         (input)="search.set($any($event.target).value)"
-        placeholder="Search by name, category or tag…"
+        placeholder="Search by name, content or meaning…"
         data-testid="search"
         class="h-9 min-w-[16rem] flex-1 rounded-md border border-border bg-surface-2 px-3 text-sm text-text outline-none transition focus:border-brand-500"
       />
@@ -122,6 +122,11 @@ interface RejectedFile {
           }
         </div>
       } @else {
+        @if (search().trim()) {
+          <p class="mb-2 text-xs text-text-dim" data-testid="relevance-hint">
+            Ranked by relevance (keyword + semantic match)
+          </p>
+        }
         <table class="w-full text-left text-sm" data-testid="documents-table">
           <thead class="text-xs uppercase tracking-wider text-text-dim">
             <tr class="border-b border-border">
