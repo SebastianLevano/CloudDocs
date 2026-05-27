@@ -5,7 +5,13 @@
  */
 import type { ClassifyResult, SummaryResult } from '@clouddocs/shared-types';
 
-import { EMBEDDING_DIMENSIONS, type AiProvider, type AiResult, type EmbedResult } from './provider';
+import {
+  EMBEDDING_DIMENSIONS,
+  type AiProvider,
+  type AiResult,
+  type ChatTurn,
+  type EmbedResult,
+} from './provider';
 
 export class MockAiProvider implements AiProvider {
   async summarize(text: string): Promise<AiResult<SummaryResult>> {
@@ -31,6 +37,15 @@ export class MockAiProvider implements AiProvider {
       vectors: texts.map(hashEmbed),
       usage: { model: 'mock', promptVersion: 'embed.mock', costUsd: 0 },
     };
+  }
+
+  async chat(turns: ChatTurn[]): Promise<AiResult<string>> {
+    const lastUser = [...turns].reverse().find((t) => t.role === 'user');
+    const hasContext = turns.some((t) => t.role === 'system' && t.content.includes('Context:'));
+    const answer = hasContext
+      ? `Based on your documents, here is the answer to "${lastUser?.content ?? ''}". [1]`
+      : `I could not find anything relevant in your documents for "${lastUser?.content ?? ''}".`;
+    return { data: answer, usage: { model: 'mock', promptVersion: 'chat.mock', costUsd: 0 } };
   }
 }
 

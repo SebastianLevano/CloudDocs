@@ -36,6 +36,11 @@ export const appRoutes: Route[] = [
         loadComponent: () =>
           import('./features/documents/document-detail.page').then((m) => m.DocumentDetailPage),
       },
+      {
+        path: 'chat',
+        title: 'Chat · CloudDocs AI',
+        loadComponent: () => import('./features/chat/chat.page').then((m) => m.ChatPage),
+      },
     ],
   },
   {

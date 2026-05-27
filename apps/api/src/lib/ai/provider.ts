@@ -31,9 +31,16 @@ export interface EmbedResult {
   usage: AiUsage;
 }
 
+export interface ChatTurn {
+  role: 'system' | 'user' | 'assistant';
+  content: string;
+}
+
 export interface AiProvider {
   summarize(text: string): Promise<AiResult<SummaryResult>>;
   classify(text: string): Promise<AiResult<ClassifyResult>>;
   /** Embed a batch of texts (document chunks or a search query). */
   embed(texts: string[]): Promise<EmbedResult>;
+  /** Single-shot chat completion (non-streaming). Returns the answer text. */
+  chat(turns: ChatTurn[]): Promise<AiResult<string>>;
 }

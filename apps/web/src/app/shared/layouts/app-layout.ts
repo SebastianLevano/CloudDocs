@@ -88,8 +88,8 @@ export class AppLayout {
   protected readonly nav = [
     { icon: '🏠', label: 'Home', link: '/dashboard', disabled: false },
     { icon: '📄', label: 'Documents', link: '/documents', disabled: false },
-    { icon: '🔍', label: 'Search', link: '/dashboard', disabled: true },
-    { icon: '💬', label: 'Chat', link: '/dashboard', disabled: true },
+    { icon: '🔍', label: 'Search', link: '/documents', disabled: false },
+    { icon: '💬', label: 'Chat', link: '/chat', disabled: false },
     { icon: '⚙️', label: 'Settings', link: '/dashboard', disabled: true },
   ];
 

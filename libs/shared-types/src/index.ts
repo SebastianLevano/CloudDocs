@@ -10,3 +10,4 @@ export * from './schemas/auth';
 export * from './schemas/orgs';
 export * from './schemas/documents';
 export * from './schemas/analysis';
+export * from './schemas/chat';

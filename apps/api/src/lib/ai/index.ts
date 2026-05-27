@@ -1,4 +1,4 @@
-export type { AiProvider, AiResult, AiUsage, EmbedResult } from './provider';
+export type { AiProvider, AiResult, AiUsage, ChatTurn, EmbedResult } from './provider';
 export { EMBEDDING_DIMENSIONS } from './provider';
 export { OpenAiProvider } from './openai-provider';
 export { MockAiProvider } from './mock-provider';

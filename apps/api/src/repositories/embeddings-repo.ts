@@ -50,4 +50,45 @@ export class EmbeddingsRepo extends OrgScopedRepository {
     );
     return Number(rows[0]?.n ?? 0);
   }
+
+  /**
+   * Retrieve the top-K chunks nearest the query vector (cosine), for RAG. Joins
+   * documents for the filename. Optionally scoped to a single document.
+   * `$1`=org, `$2`=vector, `$3`=limit, `$4`=documentId (when filtering).
+   */
+  async search(
+    queryVector: number[],
+    limit: number,
+    documentId?: string,
+  ): Promise<RetrievedChunk[]> {
+    const vec = toVectorLiteral(queryVector);
+    const params: unknown[] = [vec, limit];
+    let filter = '';
+    if (documentId) {
+      params.push(documentId);
+      filter = 'AND e.document_id = $4';
+    }
+    return this.scopedQuery<RetrievedChunk>(
+      `SELECT e.document_id AS "documentId",
+              d.filename     AS filename,
+              e.chunk_index  AS "chunkIndex",
+              e.chunk_text   AS "chunkText",
+              (e.embedding <=> $2::vector) AS distance
+       FROM embeddings e
+       JOIN documents d ON d.id = e.document_id AND d.org_id = $1
+       WHERE e.org_id = $1 ${filter}
+       ORDER BY e.embedding <=> $2::vector
+       LIMIT $3`,
+      params,
+    );
+  }
 }
+
+// type alias (not interface) so it satisfies the scopedQuery `Record` constraint.
+export type RetrievedChunk = {
+  documentId: string;
+  filename: string;
+  chunkIndex: number;
+  chunkText: string;
+  distance: number;
+};
