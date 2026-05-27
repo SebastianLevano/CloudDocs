@@ -80,6 +80,10 @@ export type CreateDocumentResponse = z.infer<typeof CreateDocumentResponseSchema
 export const DocumentListQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(20),
   cursor: z.uuid().optional(),
+  /** Full-text search over filename + category + tags. */
+  q: z.string().trim().min(1).max(200).optional(),
+  status: DocumentStatusSchema.optional(),
+  category: z.string().min(1).max(80).optional(),
 });
 export type DocumentListQuery = z.infer<typeof DocumentListQuerySchema>;
 
@@ -95,3 +99,23 @@ export const DownloadResponseSchema = z.object({
   expiresInSeconds: z.number().int().positive(),
 });
 export type DownloadResponse = z.infer<typeof DownloadResponseSchema>;
+
+/** One day's upload count for the dashboard sparkline. */
+export const UploadsPerDaySchema = z.object({
+  date: z.string(), // YYYY-MM-DD
+  count: z.number().int().nonnegative(),
+});
+export type UploadsPerDay = z.infer<typeof UploadsPerDaySchema>;
+
+/** Aggregate counters for the dashboard (org-scoped). */
+export const DocumentStatsSchema = z.object({
+  total: z.number().int().nonnegative(),
+  ready: z.number().int().nonnegative(),
+  processing: z.number().int().nonnegative(),
+  failed: z.number().int().nonnegative(),
+  storageBytes: z.number().int().nonnegative(),
+  analysesThisMonth: z.number().int().nonnegative(),
+  /** Oldest → newest, one entry per day (last 14 days). */
+  uploadsPerDay: z.array(UploadsPerDaySchema),
+});
+export type DocumentStats = z.infer<typeof DocumentStatsSchema>;

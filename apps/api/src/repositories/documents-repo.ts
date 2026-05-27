@@ -166,34 +166,91 @@ export class DocumentsRepo extends OrgScopedRepository {
   }
 
   /**
-   * Keyset pagination, newest first. Pass the previous page's last `id` as
-   * `cursor` to get the next page. Fetches one extra row to know whether more
-   * exist without a second count query.
+   * Keyset pagination, newest first, with optional full-text search (`q` over
+   * filename+category+tags) and status/category filters. Fetches one extra row
+   * to know whether more exist without a second count query. The WHERE clause is
+   * built dynamically; `$1` is always the org id (prepended by scopedQuery).
    */
-  async list(
-    limit: number,
-    cursor?: string,
-  ): Promise<{ rows: DocumentRow[]; nextCursor: string | null }> {
-    const rows = cursor
-      ? await this.scopedQuery<DocumentRow>(
-          `SELECT * FROM documents
-           WHERE org_id = $1
-             AND (created_at, id) < (SELECT created_at, id FROM documents WHERE id = $2 AND org_id = $1)
-           ORDER BY created_at DESC, id DESC
-           LIMIT $3`,
-          [cursor, limit + 1],
-        )
-      : await this.scopedQuery<DocumentRow>(
-          `SELECT * FROM documents
-           WHERE org_id = $1
-           ORDER BY created_at DESC, id DESC
-           LIMIT $2`,
-          [limit + 1],
-        );
+  async list(opts: {
+    limit: number;
+    cursor?: string;
+    q?: string;
+    status?: DocumentStatus;
+    category?: string;
+  }): Promise<{ rows: DocumentRow[]; nextCursor: string | null }> {
+    const where = ['org_id = $1'];
+    const params: unknown[] = [];
+    let p = 1;
+    const add = (value: unknown): string => {
+      params.push(value);
+      return `$${++p}`;
+    };
 
-    const hasMore = rows.length > limit;
-    const page = hasMore ? rows.slice(0, limit) : rows;
+    if (opts.q) where.push(`search_tsv @@ websearch_to_tsquery('simple', ${add(opts.q)})`);
+    if (opts.status) where.push(`status = ${add(opts.status)}`);
+    if (opts.category) where.push(`category = ${add(opts.category)}`);
+    if (opts.cursor) {
+      where.push(
+        `(created_at, id) < (SELECT created_at, id FROM documents WHERE id = ${add(opts.cursor)} AND org_id = $1)`,
+      );
+    }
+    const limitPlaceholder = add(opts.limit + 1);
+
+    const rows = await this.scopedQuery<DocumentRow>(
+      `SELECT * FROM documents
+       WHERE ${where.join(' AND ')}
+       ORDER BY created_at DESC, id DESC
+       LIMIT ${limitPlaceholder}`,
+      params,
+    );
+
+    const hasMore = rows.length > opts.limit;
+    const page = hasMore ? rows.slice(0, opts.limit) : rows;
     return { rows: page, nextCursor: hasMore ? (page[page.length - 1]?.id ?? null) : null };
+  }
+
+  /** Aggregate counters + a 14-day uploads series for the dashboard. */
+  async getStats(): Promise<{
+    total: number;
+    ready: number;
+    processing: number;
+    failed: number;
+    storageBytes: number;
+    uploadsPerDay: Array<{ date: string; count: number }>;
+  }> {
+    const agg = await this.scopedQuery<{
+      total: string;
+      ready: string;
+      processing: string;
+      failed: string;
+      bytes: string;
+    }>(
+      `SELECT
+         count(*) AS total,
+         count(*) FILTER (WHERE status = 'ready') AS ready,
+         count(*) FILTER (WHERE status = 'failed') AS failed,
+         count(*) FILTER (WHERE status NOT IN ('ready', 'failed')) AS processing,
+         coalesce(sum(size_bytes), 0) AS bytes
+       FROM documents WHERE org_id = $1`,
+    );
+    const series = await this.scopedQuery<{ date: string; count: string }>(
+      `SELECT to_char(d::date, 'YYYY-MM-DD') AS date, coalesce(c.count, 0) AS count
+       FROM generate_series(current_date - interval '13 days', current_date, interval '1 day') AS d
+       LEFT JOIN (
+         SELECT created_at::date AS day, count(*) AS count
+         FROM documents WHERE org_id = $1 GROUP BY 1
+       ) c ON c.day = d::date
+       ORDER BY d`,
+    );
+    const a = agg[0];
+    return {
+      total: Number(a?.total ?? 0),
+      ready: Number(a?.ready ?? 0),
+      processing: Number(a?.processing ?? 0),
+      failed: Number(a?.failed ?? 0),
+      storageBytes: Number(a?.bytes ?? 0),
+      uploadsPerDay: series.map((r) => ({ date: r.date, count: Number(r.count) })),
+    };
   }
 }
 

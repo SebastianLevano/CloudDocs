@@ -90,6 +90,14 @@ const DOC_ROUTES: readonly DocRoute[] = [
     description: 'Keyset-paginated list of the active org documents.',
   },
   {
+    id: 'Stats',
+    handlerDir: 'stats',
+    method: apigwv2.HttpMethod.GET,
+    // Literal segment — HTTP API prioritises this over the `{id}` route below.
+    path: '/v1/documents/stats',
+    description: 'Aggregate document counters for the dashboard.',
+  },
+  {
     id: 'Get',
     handlerDir: 'get',
     method: apigwv2.HttpMethod.GET,

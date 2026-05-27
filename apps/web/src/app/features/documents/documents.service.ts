@@ -8,8 +8,17 @@ import type {
   Document,
   DocumentDetailResponse,
   DocumentListResponse,
+  DocumentStats,
   DownloadResponse,
 } from '@clouddocs/shared-types';
+
+export interface ListParams {
+  cursor?: string;
+  limit?: number;
+  q?: string;
+  status?: string;
+  category?: string;
+}
 
 import { API_BASE_URL } from '../../core/api/api.config';
 import { AuthService } from '../../core/auth/auth.service';
@@ -49,10 +58,18 @@ export class DocumentsService {
     );
   }
 
-  list(cursor?: string, limit = 20): Observable<DocumentListResponse> {
-    const params: Record<string, string> = { limit: String(limit) };
-    if (cursor) params['cursor'] = cursor;
+  list(opts: ListParams = {}): Observable<DocumentListResponse> {
+    const params: Record<string, string> = { limit: String(opts.limit ?? 20) };
+    if (opts.cursor) params['cursor'] = opts.cursor;
+    if (opts.q) params['q'] = opts.q;
+    if (opts.status) params['status'] = opts.status;
+    if (opts.category) params['category'] = opts.category;
     return this.http.get<DocumentListResponse>(this.url, { headers: this.orgHeaders(), params });
+  }
+
+  /** Aggregate counters for the dashboard. */
+  stats(): Observable<DocumentStats> {
+    return this.http.get<DocumentStats>(`${this.url}/stats`, { headers: this.orgHeaders() });
   }
 
   /** Document detail + its AI analyses. */

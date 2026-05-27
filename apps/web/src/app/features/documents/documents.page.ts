@@ -1,9 +1,9 @@
 import { ChangeDetectionStrategy, Component, inject, OnInit, signal } from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
-import { timer } from 'rxjs';
+import { debounceTime, distinctUntilChanged, timer } from 'rxjs';
 
-import type { Document } from '@clouddocs/shared-types';
+import { DOCUMENT_CATEGORIES, type Document } from '@clouddocs/shared-types';
 
 import { apiErrorMessage } from '../../shared/utils/api-error';
 import { DocumentsService } from './documents.service';
@@ -66,8 +66,42 @@ interface RejectedFile {
       </section>
     }
 
+    <!-- Search + filters -->
+    <div class="mt-8 flex flex-wrap items-center gap-3">
+      <input
+        type="search"
+        [value]="search()"
+        (input)="search.set($any($event.target).value)"
+        placeholder="Search by name, category or tag…"
+        data-testid="search"
+        class="h-9 min-w-[16rem] flex-1 rounded-md border border-border bg-surface-2 px-3 text-sm text-text outline-none transition focus:border-brand-500"
+      />
+      <select
+        [value]="statusFilter()"
+        (change)="statusFilter.set($any($event.target).value); refresh()"
+        data-testid="status-filter"
+        class="h-9 rounded-md border border-border bg-surface-2 px-2 text-sm text-text-muted outline-none focus:border-brand-500"
+      >
+        <option value="">All statuses</option>
+        <option value="ready">Ready</option>
+        <option value="analyzing">Processing</option>
+        <option value="failed">Failed</option>
+      </select>
+      <select
+        [value]="categoryFilter()"
+        (change)="categoryFilter.set($any($event.target).value); refresh()"
+        data-testid="category-filter"
+        class="h-9 rounded-md border border-border bg-surface-2 px-2 text-sm text-text-muted outline-none focus:border-brand-500"
+      >
+        <option value="">All categories</option>
+        @for (c of categories; track c) {
+          <option [value]="c">{{ c }}</option>
+        }
+      </select>
+    </div>
+
     <!-- Document list -->
-    <section class="mt-8">
+    <section class="mt-4">
       @if (loading()) {
         <p class="text-sm text-text-muted">Loading…</p>
       } @else if (loadError()) {
@@ -79,8 +113,13 @@ interface RejectedFile {
           class="rounded-xl border border-dashed border-border bg-surface-1 px-6 py-12 text-center"
           data-testid="empty-state"
         >
-          <p class="text-sm font-medium text-text">No documents yet</p>
-          <p class="mt-1 text-xs text-text-dim">Upload your first file to get started.</p>
+          @if (isFiltered()) {
+            <p class="text-sm font-medium text-text">No documents match your search</p>
+            <p class="mt-1 text-xs text-text-dim">Try a different term or clear the filters.</p>
+          } @else {
+            <p class="text-sm font-medium text-text">No documents yet</p>
+            <p class="mt-1 text-xs text-text-dim">Upload your first file to get started.</p>
+          }
         </div>
       } @else {
         <table class="w-full text-left text-sm" data-testid="documents-table">
@@ -132,7 +171,17 @@ export class DocumentsPage implements OnInit {
   protected readonly uploads = signal<UploadHandle[]>([]);
   protected readonly rejected = signal<RejectedFile[]>([]);
 
+  protected readonly search = signal('');
+  protected readonly statusFilter = signal('');
+  protected readonly categoryFilter = signal('');
+  protected readonly categories = DOCUMENT_CATEGORIES;
+
   constructor() {
+    // Debounce the search box so we don't fire a request per keystroke.
+    toObservable(this.search)
+      .pipe(debounceTime(300), distinctUntilChanged(), takeUntilDestroyed())
+      .subscribe(() => this.refresh());
+
     // While any document is still being processed, re-fetch the list every 3s
     // so statuses (and categories) update without a manual refresh.
     timer(3000, 3000)
@@ -144,6 +193,10 @@ export class DocumentsPage implements OnInit {
 
   ngOnInit(): void {
     this.refresh();
+  }
+
+  protected isFiltered(): boolean {
+    return !!(this.search().trim() || this.statusFilter() || this.categoryFilter());
   }
 
   protected onFilesSelected(files: File[]): void {
@@ -167,19 +220,25 @@ export class DocumentsPage implements OnInit {
     }
   }
 
-  private refresh(): void {
+  protected refresh(): void {
     this.loading.set(true);
     this.loadError.set(null);
-    this.documentsApi.list().subscribe({
-      next: (res) => {
-        this.documents.set(res.documents);
-        this.loading.set(false);
-      },
-      error: (err) => {
-        this.loadError.set(apiErrorMessage(err, 'Could not load documents.'));
-        this.loading.set(false);
-      },
-    });
+    this.documentsApi
+      .list({
+        ...(this.search().trim() ? { q: this.search().trim() } : {}),
+        ...(this.statusFilter() ? { status: this.statusFilter() } : {}),
+        ...(this.categoryFilter() ? { category: this.categoryFilter() } : {}),
+      })
+      .subscribe({
+        next: (res) => {
+          this.documents.set(res.documents);
+          this.loading.set(false);
+        },
+        error: (err) => {
+          this.loadError.set(apiErrorMessage(err, 'Could not load documents.'));
+          this.loading.set(false);
+        },
+      });
   }
 
   protected uploadLabel(u: UploadHandle): string {
