@@ -7,6 +7,8 @@ export interface InfraConfig {
   readonly env: Required<Environment>;
   readonly resourcePrefix: string;
   readonly alertEmail: string;
+  /** Browser origins allowed by the API CORS policy (credentials require exact origins). */
+  readonly webOrigins: string[];
   readonly billingAlarmUsd: number;
   readonly uploadsLifecycle: {
     readonly transitionToIaDays: number;
@@ -56,11 +58,18 @@ export function loadConfig(stageInput?: string): InfraConfig {
 
   const stageDefaults = STAGE_DEFAULTS[stage];
 
+  // Dev server origin is always allowed; the deployed frontend origin (Vercel)
+  // is supplied via WEB_ORIGIN at deploy time so we never hardcode it.
+  const webOrigins = ['http://localhost:4200'];
+  const webOrigin = process.env.WEB_ORIGIN?.trim();
+  if (webOrigin && !webOrigins.includes(webOrigin)) webOrigins.push(webOrigin);
+
   return {
     stage,
     env: { account, region },
     resourcePrefix: `clouddocs-${stage}`,
     alertEmail,
+    webOrigins,
     billingAlarmUsd: stageDefaults.billingAlarmUsd,
     uploadsLifecycle: stageDefaults.uploadsLifecycle,
     customDomain: { enabled: false },
