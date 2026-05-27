@@ -159,9 +159,9 @@ export class ApiStack extends cdk.Stack {
       description: 'CloudDocs public HTTP API (v2).',
       corsPreflight: {
         // allowCredentials=true (needed for the refresh cookie) is incompatible
-        // with allowOrigins '*'. Enumerate explicit origins per stage.
-        // TODO Phase 6: add the prod Vercel + custom domain origins here.
-        allowOrigins: ['http://localhost:4200'],
+        // with allowOrigins '*'. Origins come from config.webOrigins: localhost
+        // always + the deployed frontend origin via the WEB_ORIGIN env var.
+        allowOrigins: config.webOrigins,
         allowMethods: [
           apigwv2.CorsHttpMethod.GET,
           apigwv2.CorsHttpMethod.POST,
