@@ -23,6 +23,17 @@ export const OrgsRepo = {
     return queryOne<OrganizationRow>('SELECT * FROM organizations WHERE id = $1', [id]);
   },
 
+  async setStripeCustomer(id: string, stripeCustomerId: string): Promise<void> {
+    await queryOne('UPDATE organizations SET stripe_customer_id = $2 WHERE id = $1', [
+      id,
+      stripeCustomerId,
+    ]);
+  },
+
+  async setPlan(id: string, plan: 'free' | 'pro'): Promise<void> {
+    await queryOne('UPDATE organizations SET plan = $2 WHERE id = $1', [id, plan]);
+  },
+
   async create(tx: TxClient, input: { name: string; slug: string }): Promise<OrganizationRow> {
     const rows = await tx.query<OrganizationRow>(
       `INSERT INTO organizations (name, slug)
