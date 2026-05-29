@@ -23,6 +23,7 @@ const HANDLERS_ROOT = path.join(WORKSPACE_ROOT, 'apps', 'api', 'src', 'handlers'
 // Mirror of apps/api/src/lib/events.ts (separate build, can't import across it).
 const EVENT_SOURCE = 'clouddocs.documents';
 const DOCUMENT_EXTRACTED = 'DocumentExtracted';
+const DOCUMENT_NEEDS_OCR = 'DocumentNeedsOcr';
 
 /**
  * Async AI pipeline (plan §2.2):
@@ -57,6 +58,7 @@ export class PipelineStack extends cdk.Stack {
     const summarizeQueue = makeQueue('doc-summarize');
     const classifyQueue = makeQueue('doc-classify');
     const embedQueue = makeQueue('doc-embed');
+    const ocrQueue = makeQueue('doc-ocr');
 
     // S3 ObjectCreated (raw-uploads/) → ingest queue.
     new events.Rule(this, 'DocUploadedRule', {
@@ -146,6 +148,21 @@ export class PipelineStack extends cdk.Stack {
       memorySize: 512,
       canWriteBucket: false,
       canPutEvents: false,
+    });
+
+    // DocumentNeedsOcr → OCR queue → ocr-worker.
+    new events.Rule(this, 'DocNeedsOcrRule', {
+      ruleName: `${prefix}-doc-needs-ocr`,
+      description: 'Route scanned documents to the OCR worker.',
+      eventPattern: { source: [EVENT_SOURCE], detailType: [DOCUMENT_NEEDS_OCR] },
+      targets: [new targets.SqsQueue(ocrQueue)],
+    });
+    // OCR worker: needs 1 GB for Tesseract WASM; reads raw bytes, writes text,
+    // emits DocumentExtracted so analysis pipeline picks up from there.
+    makeWorker('OcrWorker', 'ocr', ocrQueue, {
+      memorySize: 1024,
+      canWriteBucket: true,
+      canPutEvents: true,
     });
 
     new cdk.CfnOutput(this, 'IngestQueueUrl', { value: ingestQueue.queueUrl });

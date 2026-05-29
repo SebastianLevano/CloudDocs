@@ -120,6 +120,41 @@ const DOC_ROUTES: readonly DocRoute[] = [
   },
 ];
 
+interface FolderRoute {
+  readonly id: string;
+  readonly handlerDir: string;
+  readonly method: apigwv2.HttpMethod;
+  readonly path: string;
+}
+
+const FOLDER_ROUTES: readonly FolderRoute[] = [
+  {
+    id: 'Create',
+    handlerDir: 'folders/create',
+    method: apigwv2.HttpMethod.POST,
+    path: '/v1/folders',
+  },
+  { id: 'List', handlerDir: 'folders/list', method: apigwv2.HttpMethod.GET, path: '/v1/folders' },
+  {
+    id: 'Get',
+    handlerDir: 'folders/get',
+    method: apigwv2.HttpMethod.GET,
+    path: '/v1/folders/{id}',
+  },
+  {
+    id: 'Update',
+    handlerDir: 'folders/update',
+    method: apigwv2.HttpMethod.PATCH,
+    path: '/v1/folders/{id}',
+  },
+  {
+    id: 'Delete',
+    handlerDir: 'folders/delete',
+    method: apigwv2.HttpMethod.DELETE,
+    path: '/v1/folders/{id}',
+  },
+];
+
 export class ApiStack extends cdk.Stack {
   readonly httpApi: apigwv2.HttpApi;
   readonly apiSecret: secretsmanager.Secret;
@@ -273,6 +308,296 @@ export class ApiStack extends cdk.Stack {
       path: '/v1/chat',
       methods: [apigwv2.HttpMethod.POST],
       integration: new HttpLambdaIntegration('ChatIntegration', chat.function),
+    });
+
+    // Folder Lambdas — DB access only (no S3 presigning needed for folder metadata).
+    for (const route of FOLDER_ROUTES) {
+      const folderHandler = new NodejsHandler(this, `Folder${route.id}`, {
+        functionName: `${config.resourcePrefix}-folders-${route.id.toLowerCase()}`,
+        entry: path.join(HANDLERS_ROOT, route.handlerDir, 'handler.ts'),
+        environment: {
+          STAGE: config.stage,
+          SERVICE_VERSION: process.env.SERVICE_VERSION ?? '0.1.0',
+          SECRET_ARN: this.apiSecret.secretArn,
+          LOG_LEVEL: config.stage === 'prod' ? 'info' : 'debug',
+        },
+        timeout: cdk.Duration.seconds(15),
+        minify: config.stage === 'prod',
+        sourceMap: config.stage !== 'prod',
+        logRetention: logs.RetentionDays.TWO_WEEKS,
+        logRemovalPolicy:
+          config.stage === 'prod' ? cdk.RemovalPolicy.RETAIN : cdk.RemovalPolicy.DESTROY,
+      });
+      this.apiSecret.grantRead(folderHandler.function);
+      this.httpApi.addRoutes({
+        path: route.path,
+        methods: [route.method],
+        integration: new HttpLambdaIntegration(
+          `Folder${route.id}Integration`,
+          folderHandler.function,
+        ),
+      });
+    }
+
+    // Share Lambdas — authenticated create/delete + public unauthenticated GET.
+    const shareEnv = {
+      STAGE: config.stage,
+      SERVICE_VERSION: process.env.SERVICE_VERSION ?? '0.1.0',
+      SECRET_ARN: this.apiSecret.secretArn,
+      UPLOADS_BUCKET: props.uploadsBucket.bucketName,
+      LOG_LEVEL: config.stage === 'prod' ? 'info' : 'debug',
+    };
+    const shareHandlerOpts = {
+      timeout: cdk.Duration.seconds(15),
+      minify: config.stage === 'prod',
+      sourceMap: config.stage !== 'prod',
+      logRetention: logs.RetentionDays.TWO_WEEKS,
+      logRemovalPolicy:
+        config.stage === 'prod' ? cdk.RemovalPolicy.RETAIN : cdk.RemovalPolicy.DESTROY,
+    };
+
+    const shareCreate = new NodejsHandler(this, 'ShareCreate', {
+      functionName: `${config.resourcePrefix}-shares-create`,
+      entry: path.join(HANDLERS_ROOT, 'shares', 'create', 'handler.ts'),
+      environment: shareEnv,
+      ...shareHandlerOpts,
+    });
+    this.apiSecret.grantRead(shareCreate.function);
+    this.httpApi.addRoutes({
+      path: '/v1/documents/{id}/shares',
+      methods: [apigwv2.HttpMethod.POST],
+      integration: new HttpLambdaIntegration('ShareCreateIntegration', shareCreate.function),
+    });
+
+    const shareDelete = new NodejsHandler(this, 'ShareDelete', {
+      functionName: `${config.resourcePrefix}-shares-delete`,
+      entry: path.join(HANDLERS_ROOT, 'shares', 'delete', 'handler.ts'),
+      environment: shareEnv,
+      ...shareHandlerOpts,
+    });
+    this.apiSecret.grantRead(shareDelete.function);
+    this.httpApi.addRoutes({
+      path: '/v1/documents/{id}/shares/{shareId}',
+      methods: [apigwv2.HttpMethod.DELETE],
+      integration: new HttpLambdaIntegration('ShareDeleteIntegration', shareDelete.function),
+    });
+
+    // Public share — no JWT required; needs S3 presign for download URL.
+    const sharePublicGet = new NodejsHandler(this, 'SharePublicGet', {
+      functionName: `${config.resourcePrefix}-shares-public-get`,
+      entry: path.join(HANDLERS_ROOT, 'shares', 'public-get', 'handler.ts'),
+      environment: shareEnv,
+      ...shareHandlerOpts,
+    });
+    this.apiSecret.grantRead(sharePublicGet.function);
+    props.uploadsBucket.grantRead(sharePublicGet.function);
+    this.httpApi.addRoutes({
+      path: '/v1/public/shares/{token}',
+      methods: [apigwv2.HttpMethod.GET],
+      integration: new HttpLambdaIntegration('SharePublicGetIntegration', sharePublicGet.function),
+    });
+
+    // Comment Lambdas — nested under /v1/documents/{id}/comments.
+    const commentEnv = {
+      STAGE: config.stage,
+      SERVICE_VERSION: process.env.SERVICE_VERSION ?? '0.1.0',
+      SECRET_ARN: this.apiSecret.secretArn,
+      LOG_LEVEL: config.stage === 'prod' ? 'info' : 'debug',
+    };
+    const commentHandlerOpts = { ...shareHandlerOpts };
+
+    const commentCreate = new NodejsHandler(this, 'CommentCreate', {
+      functionName: `${config.resourcePrefix}-comments-create`,
+      entry: path.join(HANDLERS_ROOT, 'documents', 'comments', 'create', 'handler.ts'),
+      environment: commentEnv,
+      ...commentHandlerOpts,
+    });
+    this.apiSecret.grantRead(commentCreate.function);
+    this.httpApi.addRoutes({
+      path: '/v1/documents/{id}/comments',
+      methods: [apigwv2.HttpMethod.POST],
+      integration: new HttpLambdaIntegration('CommentCreateIntegration', commentCreate.function),
+    });
+
+    const commentList = new NodejsHandler(this, 'CommentList', {
+      functionName: `${config.resourcePrefix}-comments-list`,
+      entry: path.join(HANDLERS_ROOT, 'documents', 'comments', 'list', 'handler.ts'),
+      environment: commentEnv,
+      ...commentHandlerOpts,
+    });
+    this.apiSecret.grantRead(commentList.function);
+    this.httpApi.addRoutes({
+      path: '/v1/documents/{id}/comments',
+      methods: [apigwv2.HttpMethod.GET],
+      integration: new HttpLambdaIntegration('CommentListIntegration', commentList.function),
+    });
+
+    const commentDelete = new NodejsHandler(this, 'CommentDelete', {
+      functionName: `${config.resourcePrefix}-comments-delete`,
+      entry: path.join(HANDLERS_ROOT, 'documents', 'comments', 'delete', 'handler.ts'),
+      environment: commentEnv,
+      ...commentHandlerOpts,
+    });
+    this.apiSecret.grantRead(commentDelete.function);
+    this.httpApi.addRoutes({
+      path: '/v1/documents/{id}/comments/{commentId}',
+      methods: [apigwv2.HttpMethod.DELETE],
+      integration: new HttpLambdaIntegration('CommentDeleteIntegration', commentDelete.function),
+    });
+
+    // Billing Lambdas — Stripe checkout, portal, usage (owner-gated, need DB) and
+    // webhook (no JWT, needs raw body for signature verification).
+    const billingEnv = {
+      STAGE: config.stage,
+      SERVICE_VERSION: process.env.SERVICE_VERSION ?? '0.1.0',
+      SECRET_ARN: this.apiSecret.secretArn,
+      FRONTEND_URL: process.env['WEB_ORIGIN'] ?? 'http://localhost:4200',
+      LOG_LEVEL: config.stage === 'prod' ? 'info' : 'debug',
+    };
+    const billingOpts = {
+      timeout: cdk.Duration.seconds(15),
+      minify: config.stage === 'prod',
+      sourceMap: config.stage !== 'prod',
+      logRetention: logs.RetentionDays.TWO_WEEKS,
+      logRemovalPolicy:
+        config.stage === 'prod' ? cdk.RemovalPolicy.RETAIN : cdk.RemovalPolicy.DESTROY,
+    };
+
+    const billingCheckout = new NodejsHandler(this, 'BillingCheckout', {
+      functionName: `${config.resourcePrefix}-billing-checkout`,
+      entry: path.join(HANDLERS_ROOT, 'billing', 'checkout', 'handler.ts'),
+      environment: billingEnv,
+      ...billingOpts,
+    });
+    this.apiSecret.grantRead(billingCheckout.function);
+    this.httpApi.addRoutes({
+      path: '/v1/billing/checkout',
+      methods: [apigwv2.HttpMethod.POST],
+      integration: new HttpLambdaIntegration(
+        'BillingCheckoutIntegration',
+        billingCheckout.function,
+      ),
+    });
+
+    const billingPortal = new NodejsHandler(this, 'BillingPortal', {
+      functionName: `${config.resourcePrefix}-billing-portal`,
+      entry: path.join(HANDLERS_ROOT, 'billing', 'portal', 'handler.ts'),
+      environment: billingEnv,
+      ...billingOpts,
+    });
+    this.apiSecret.grantRead(billingPortal.function);
+    this.httpApi.addRoutes({
+      path: '/v1/billing/portal',
+      methods: [apigwv2.HttpMethod.POST],
+      integration: new HttpLambdaIntegration('BillingPortalIntegration', billingPortal.function),
+    });
+
+    const billingUsage = new NodejsHandler(this, 'BillingUsage', {
+      functionName: `${config.resourcePrefix}-billing-usage`,
+      entry: path.join(HANDLERS_ROOT, 'billing', 'usage', 'handler.ts'),
+      environment: billingEnv,
+      ...billingOpts,
+    });
+    this.apiSecret.grantRead(billingUsage.function);
+    this.httpApi.addRoutes({
+      path: '/v1/billing/usage',
+      methods: [apigwv2.HttpMethod.GET],
+      integration: new HttpLambdaIntegration('BillingUsageIntegration', billingUsage.function),
+    });
+
+    // Webhook has no JWT. API Gateway delivers the raw body intact (no
+    // transformation) so Stripe signature verification works.
+    const billingWebhook = new NodejsHandler(this, 'BillingWebhook', {
+      functionName: `${config.resourcePrefix}-billing-webhook`,
+      entry: path.join(HANDLERS_ROOT, 'billing', 'webhook', 'handler.ts'),
+      environment: billingEnv,
+      ...billingOpts,
+    });
+    this.apiSecret.grantRead(billingWebhook.function);
+    this.httpApi.addRoutes({
+      path: '/v1/billing/webhook',
+      methods: [apigwv2.HttpMethod.POST],
+      integration: new HttpLambdaIntegration('BillingWebhookIntegration', billingWebhook.function),
+    });
+
+    // Activity log Lambda — org-scoped, supports ?format=csv.
+    const activityList = new NodejsHandler(this, 'ActivityList', {
+      functionName: `${config.resourcePrefix}-activity-list`,
+      entry: path.join(HANDLERS_ROOT, 'activity', 'list', 'handler.ts'),
+      environment: {
+        STAGE: config.stage,
+        SERVICE_VERSION: process.env.SERVICE_VERSION ?? '0.1.0',
+        SECRET_ARN: this.apiSecret.secretArn,
+        LOG_LEVEL: config.stage === 'prod' ? 'info' : 'debug',
+      },
+      timeout: cdk.Duration.seconds(15),
+      minify: config.stage === 'prod',
+      sourceMap: config.stage !== 'prod',
+      logRetention: logs.RetentionDays.TWO_WEEKS,
+      logRemovalPolicy:
+        config.stage === 'prod' ? cdk.RemovalPolicy.RETAIN : cdk.RemovalPolicy.DESTROY,
+    });
+    this.apiSecret.grantRead(activityList.function);
+    this.httpApi.addRoutes({
+      path: '/v1/activity',
+      methods: [apigwv2.HttpMethod.GET],
+      integration: new HttpLambdaIntegration('ActivityListIntegration', activityList.function),
+    });
+
+    // Notification Lambdas.
+    const notifEnv = {
+      STAGE: config.stage,
+      SERVICE_VERSION: process.env.SERVICE_VERSION ?? '0.1.0',
+      SECRET_ARN: this.apiSecret.secretArn,
+      LOG_LEVEL: config.stage === 'prod' ? 'info' : 'debug',
+    };
+    const notifOpts = {
+      timeout: cdk.Duration.seconds(15),
+      minify: config.stage === 'prod',
+      sourceMap: config.stage !== 'prod',
+      logRetention: logs.RetentionDays.TWO_WEEKS,
+      logRemovalPolicy:
+        config.stage === 'prod' ? cdk.RemovalPolicy.RETAIN : cdk.RemovalPolicy.DESTROY,
+    };
+
+    const notifList = new NodejsHandler(this, 'NotifList', {
+      functionName: `${config.resourcePrefix}-notifications-list`,
+      entry: path.join(HANDLERS_ROOT, 'notifications', 'list', 'handler.ts'),
+      environment: notifEnv,
+      ...notifOpts,
+    });
+    this.apiSecret.grantRead(notifList.function);
+    this.httpApi.addRoutes({
+      path: '/v1/notifications',
+      methods: [apigwv2.HttpMethod.GET],
+      integration: new HttpLambdaIntegration('NotifListIntegration', notifList.function),
+    });
+
+    // Literal segment /read-all must be listed before the /{id}/read route.
+    const notifReadAll = new NodejsHandler(this, 'NotifReadAll', {
+      functionName: `${config.resourcePrefix}-notifications-read-all`,
+      entry: path.join(HANDLERS_ROOT, 'notifications', 'read-all', 'handler.ts'),
+      environment: notifEnv,
+      ...notifOpts,
+    });
+    this.apiSecret.grantRead(notifReadAll.function);
+    this.httpApi.addRoutes({
+      path: '/v1/notifications/read-all',
+      methods: [apigwv2.HttpMethod.POST],
+      integration: new HttpLambdaIntegration('NotifReadAllIntegration', notifReadAll.function),
+    });
+
+    const notifRead = new NodejsHandler(this, 'NotifRead', {
+      functionName: `${config.resourcePrefix}-notifications-read`,
+      entry: path.join(HANDLERS_ROOT, 'notifications', 'read', 'handler.ts'),
+      environment: notifEnv,
+      ...notifOpts,
+    });
+    this.apiSecret.grantRead(notifRead.function);
+    this.httpApi.addRoutes({
+      path: '/v1/notifications/{id}/read',
+      methods: [apigwv2.HttpMethod.POST],
+      integration: new HttpLambdaIntegration('NotifReadIntegration', notifRead.function),
     });
 
     // TODO Phase 6: bind custom domain (api-dev.<domain>) via DomainName + ApiMapping.

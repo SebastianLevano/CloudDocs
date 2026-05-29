@@ -8,6 +8,7 @@ import { EventBridgeClient, PutEventsCommand } from '@aws-sdk/client-eventbridge
 
 export const EVENT_SOURCE = 'clouddocs.documents';
 export const DOCUMENT_EXTRACTED = 'DocumentExtracted';
+export const DOCUMENT_NEEDS_OCR = 'DocumentNeedsOcr';
 
 export interface DocumentExtractedDetail {
   orgId: string;
@@ -20,6 +21,22 @@ let client: EventBridgeClient | undefined;
 function bus(): EventBridgeClient {
   client ??= new EventBridgeClient({});
   return client;
+}
+
+export interface DocumentNeedsOcrDetail {
+  orgId: string;
+  documentId: string;
+  s3Key: string;
+}
+
+export async function publishDocumentNeedsOcr(detail: DocumentNeedsOcrDetail): Promise<void> {
+  await bus().send(
+    new PutEventsCommand({
+      Entries: [
+        { Source: EVENT_SOURCE, DetailType: DOCUMENT_NEEDS_OCR, Detail: JSON.stringify(detail) },
+      ],
+    }),
+  );
 }
 
 export async function publishDocumentExtracted(detail: DocumentExtractedDetail): Promise<void> {

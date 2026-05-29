@@ -27,6 +27,7 @@ export type DocumentRow = {
   category: string | null;
   tags: string[];
   metadata: Record<string, unknown>;
+  folder_id: string | null;
   created_at: Date;
   updated_at: Date;
 };
@@ -39,16 +40,25 @@ export interface CreateDocumentInput {
   mimeType: string;
   sizeBytes: number;
   s3Key: string;
+  folderId?: string | null;
 }
 
 export class DocumentsRepo extends OrgScopedRepository {
   /** Insert a new `pending_upload` row and return it. */
   async create(input: CreateDocumentInput, tx?: TxClient): Promise<DocumentRow> {
     const rows = await this.scopedQuery<DocumentRow>(
-      `INSERT INTO documents (id, org_id, uploaded_by, filename, mime_type, size_bytes, s3_key)
-       VALUES ($2, $1, $3, $4, $5, $6, $7)
+      `INSERT INTO documents (id, org_id, uploaded_by, filename, mime_type, size_bytes, s3_key, folder_id)
+       VALUES ($2, $1, $3, $4, $5, $6, $7, $8)
        RETURNING *`,
-      [input.id, input.uploadedBy, input.filename, input.mimeType, input.sizeBytes, input.s3Key],
+      [
+        input.id,
+        input.uploadedBy,
+        input.filename,
+        input.mimeType,
+        input.sizeBytes,
+        input.s3Key,
+        input.folderId ?? null,
+      ],
       tx,
     );
     const row = rows[0];
@@ -106,6 +116,28 @@ export class DocumentsRepo extends OrgScopedRepository {
        WHERE org_id = $1 AND id = $2
        RETURNING *`,
       [id, input.textS3Key, input.pageCount ?? null, input.language ?? null],
+    );
+    return rows[0];
+  }
+
+  /** Move `extracting` → `needs_ocr` when extracted text is too short to be useful. */
+  async markNeedsOcr(id: string): Promise<DocumentRow | undefined> {
+    const rows = await this.scopedQuery<DocumentRow>(
+      `UPDATE documents SET status = 'needs_ocr'
+       WHERE org_id = $1 AND id = $2 AND status = 'extracting'
+       RETURNING *`,
+      [id],
+    );
+    return rows[0];
+  }
+
+  /** Claim a `needs_ocr` document for OCR processing (idempotent). */
+  async claimForOcr(id: string): Promise<DocumentRow | undefined> {
+    const rows = await this.scopedQuery<DocumentRow>(
+      `UPDATE documents SET status = 'ocr_processing'
+       WHERE org_id = $1 AND id = $2 AND status = 'needs_ocr'
+       RETURNING *`,
+      [id],
     );
     return rows[0];
   }
@@ -177,6 +209,7 @@ export class DocumentsRepo extends OrgScopedRepository {
     q?: string;
     status?: DocumentStatus;
     category?: string;
+    folderId?: string;
   }): Promise<{ rows: DocumentRow[]; nextCursor: string | null }> {
     const where = ['org_id = $1'];
     const params: unknown[] = [];
@@ -189,6 +222,7 @@ export class DocumentsRepo extends OrgScopedRepository {
     if (opts.q) where.push(`search_tsv @@ websearch_to_tsquery('simple', ${add(opts.q)})`);
     if (opts.status) where.push(`status = ${add(opts.status)}`);
     if (opts.category) where.push(`category = ${add(opts.category)}`);
+    if (opts.folderId) where.push(`folder_id = ${add(opts.folderId)}`);
     if (opts.cursor) {
       where.push(
         `(created_at, id) < (SELECT created_at, id FROM documents WHERE id = ${add(opts.cursor)} AND org_id = $1)`,
@@ -326,6 +360,7 @@ export function toDocument(row: DocumentRow): Document {
     tags: row.tags ?? [],
     language: row.language,
     pageCount: row.page_count,
+    folderId: row.folder_id,
     createdAt: new Date(row.created_at).toISOString(),
     updatedAt: new Date(row.updated_at).toISOString(),
   };

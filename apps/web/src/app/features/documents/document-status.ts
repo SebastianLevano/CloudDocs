@@ -6,6 +6,8 @@ const PROCESSING: ReadonlySet<Document['status']> = new Set([
   'uploaded',
   'extracting',
   'extracted',
+  'needs_ocr',
+  'ocr_processing',
   'analyzing',
 ]);
 
@@ -19,6 +21,9 @@ export function statusBadgeClass(status: Document['status']): string {
       return 'border-emerald-500/40 bg-emerald-500/10 text-emerald-400';
     case 'failed':
       return 'border-danger/40 bg-danger/10 text-danger';
+    case 'needs_ocr':
+    case 'ocr_processing':
+      return 'border-amber-500/40 bg-amber-500/10 text-amber-300';
     case 'pending_upload':
       return 'border-border-strong bg-surface-3 text-text-dim';
     default:
