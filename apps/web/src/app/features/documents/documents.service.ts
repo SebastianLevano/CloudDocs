@@ -18,6 +18,7 @@ export interface ListParams {
   q?: string;
   status?: string;
   category?: string;
+  folderId?: string;
 }
 
 import { API_BASE_URL } from '../../core/api/api.config';
@@ -64,6 +65,7 @@ export class DocumentsService {
     if (opts.q) params['q'] = opts.q;
     if (opts.status) params['status'] = opts.status;
     if (opts.category) params['category'] = opts.category;
+    if (opts.folderId) params['folderId'] = opts.folderId;
     return this.http.get<DocumentListResponse>(this.url, { headers: this.orgHeaders(), params });
   }
 

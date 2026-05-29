@@ -6,6 +6,7 @@ import { debounceTime, distinctUntilChanged, timer } from 'rxjs';
 import { DOCUMENT_CATEGORIES, type Document } from '@clouddocs/shared-types';
 
 import { apiErrorMessage } from '../../shared/utils/api-error';
+import { FolderTreeComponent } from '../folders/folder-tree.component';
 import { DocumentsService } from './documents.service';
 import { UploadDropzoneComponent } from './components/upload-dropzone.component';
 import { UploadService, validateFile, type UploadHandle } from './upload.service';
@@ -19,7 +20,7 @@ interface RejectedFile {
 @Component({
   selector: 'app-documents',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [UploadDropzoneComponent, RouterLink],
+  imports: [UploadDropzoneComponent, RouterLink, FolderTreeComponent],
   template: `
     <header class="mb-6 flex items-center justify-between">
       <div>
@@ -66,104 +67,122 @@ interface RejectedFile {
       </section>
     }
 
-    <!-- Search + filters -->
-    <div class="mt-8 flex flex-wrap items-center gap-3">
-      <input
-        type="search"
-        [value]="search()"
-        (input)="search.set($any($event.target).value)"
-        placeholder="Search by name, content or meaning…"
-        data-testid="search"
-        class="h-9 min-w-[16rem] flex-1 rounded-md border border-border bg-surface-2 px-3 text-sm text-text outline-none transition focus:border-brand-500"
-      />
-      <select
-        [value]="statusFilter()"
-        (change)="statusFilter.set($any($event.target).value); refresh()"
-        data-testid="status-filter"
-        class="h-9 rounded-md border border-border bg-surface-2 px-2 text-sm text-text-muted outline-none focus:border-brand-500"
-      >
-        <option value="">All statuses</option>
-        <option value="ready">Ready</option>
-        <option value="analyzing">Processing</option>
-        <option value="failed">Failed</option>
-      </select>
-      <select
-        [value]="categoryFilter()"
-        (change)="categoryFilter.set($any($event.target).value); refresh()"
-        data-testid="category-filter"
-        class="h-9 rounded-md border border-border bg-surface-2 px-2 text-sm text-text-muted outline-none focus:border-brand-500"
-      >
-        <option value="">All categories</option>
-        @for (c of categories; track c) {
-          <option [value]="c">{{ c }}</option>
-        }
-      </select>
-    </div>
+    <!-- Main area: folder sidebar + document list -->
+    <div class="mt-8 flex gap-6">
+      <!-- Folder sidebar -->
+      <aside class="w-48 shrink-0">
+        <p class="mb-2 text-xs font-semibold uppercase tracking-wider text-text-dim">Folders</p>
+        <app-folder-tree
+          [selectedFolderId]="selectedFolderId()"
+          (folderSelected)="onFolderSelected($event)"
+          (folderCreated)="refresh()"
+        />
+      </aside>
 
-    <!-- Document list -->
-    <section class="mt-4">
-      @if (loading()) {
-        <p class="text-sm text-text-muted">Loading…</p>
-      } @else if (loadError()) {
-        <p class="rounded-md border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger">
-          {{ loadError() }}
-        </p>
-      } @else if (documents().length === 0) {
-        <div
-          class="rounded-xl border border-dashed border-border bg-surface-1 px-6 py-12 text-center"
-          data-testid="empty-state"
-        >
-          @if (isFiltered()) {
-            <p class="text-sm font-medium text-text">No documents match your search</p>
-            <p class="mt-1 text-xs text-text-dim">Try a different term or clear the filters.</p>
-          } @else {
-            <p class="text-sm font-medium text-text">No documents yet</p>
-            <p class="mt-1 text-xs text-text-dim">Upload your first file to get started.</p>
-          }
-        </div>
-      } @else {
-        @if (search().trim()) {
-          <p class="mb-2 text-xs text-text-dim" data-testid="relevance-hint">
-            Ranked by relevance (keyword + semantic match)
-          </p>
-        }
-        <table class="w-full text-left text-sm" data-testid="documents-table">
-          <thead class="text-xs uppercase tracking-wider text-text-dim">
-            <tr class="border-b border-border">
-              <th class="py-2 font-medium">Name</th>
-              <th class="py-2 font-medium">Size</th>
-              <th class="py-2 font-medium">Status</th>
-              <th class="py-2 font-medium">Uploaded</th>
-            </tr>
-          </thead>
-          <tbody>
-            @for (doc of documents(); track doc.id) {
-              <tr
-                class="cursor-pointer border-b border-border/60 transition hover:bg-surface-1"
-                [routerLink]="['/documents', doc.id]"
-                data-testid="doc-row"
-              >
-                <td class="py-3 text-text">
-                  {{ doc.filename }}
-                  @if (doc.category) {
-                    <span class="ml-2 text-xs text-text-dim">{{ doc.category }}</span>
-                  }
-                </td>
-                <td class="py-3 text-text-muted">{{ formatSize(doc.sizeBytes) }}</td>
-                <td class="py-3">
-                  <span
-                    class="rounded-full border px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider"
-                    [class]="statusClass(doc.status)"
-                    >{{ doc.status }}</span
-                  >
-                </td>
-                <td class="py-3 text-text-muted">{{ formatDate(doc.createdAt) }}</td>
-              </tr>
+      <!-- Document area -->
+      <div class="min-w-0 flex-1">
+        <!-- Search + filters -->
+        <div class="flex flex-wrap items-center gap-3">
+          <input
+            type="search"
+            [value]="search()"
+            (input)="search.set($any($event.target).value)"
+            placeholder="Search by name, content or meaning…"
+            data-testid="search"
+            class="h-9 min-w-[14rem] flex-1 rounded-md border border-border bg-surface-2 px-3 text-sm text-text outline-none transition focus:border-brand-500"
+          />
+          <select
+            [value]="statusFilter()"
+            (change)="statusFilter.set($any($event.target).value); refresh()"
+            data-testid="status-filter"
+            class="h-9 rounded-md border border-border bg-surface-2 px-2 text-sm text-text-muted outline-none focus:border-brand-500"
+          >
+            <option value="">All statuses</option>
+            <option value="ready">Ready</option>
+            <option value="analyzing">Processing</option>
+            <option value="failed">Failed</option>
+          </select>
+          <select
+            [value]="categoryFilter()"
+            (change)="categoryFilter.set($any($event.target).value); refresh()"
+            data-testid="category-filter"
+            class="h-9 rounded-md border border-border bg-surface-2 px-2 text-sm text-text-muted outline-none focus:border-brand-500"
+          >
+            <option value="">All categories</option>
+            @for (c of categories; track c) {
+              <option [value]="c">{{ c }}</option>
             }
-          </tbody>
-        </table>
-      }
-    </section>
+          </select>
+        </div>
+
+        <!-- Document list -->
+        <section class="mt-4">
+          @if (loading()) {
+            <p class="text-sm text-text-muted">Loading…</p>
+          } @else if (loadError()) {
+            <p
+              class="rounded-md border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger"
+            >
+              {{ loadError() }}
+            </p>
+          } @else if (documents().length === 0) {
+            <div
+              class="rounded-xl border border-dashed border-border bg-surface-1 px-6 py-12 text-center"
+              data-testid="empty-state"
+            >
+              @if (isFiltered()) {
+                <p class="text-sm font-medium text-text">No documents match your search</p>
+                <p class="mt-1 text-xs text-text-dim">Try a different term or clear the filters.</p>
+              } @else {
+                <p class="text-sm font-medium text-text">No documents yet</p>
+                <p class="mt-1 text-xs text-text-dim">Upload your first file to get started.</p>
+              }
+            </div>
+          } @else {
+            @if (search().trim()) {
+              <p class="mb-2 text-xs text-text-dim" data-testid="relevance-hint">
+                Ranked by relevance (keyword + semantic match)
+              </p>
+            }
+            <table class="w-full text-left text-sm" data-testid="documents-table">
+              <thead class="text-xs uppercase tracking-wider text-text-dim">
+                <tr class="border-b border-border">
+                  <th class="py-2 font-medium">Name</th>
+                  <th class="py-2 font-medium">Size</th>
+                  <th class="py-2 font-medium">Status</th>
+                  <th class="py-2 font-medium">Uploaded</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (doc of documents(); track doc.id) {
+                  <tr
+                    class="cursor-pointer border-b border-border/60 transition hover:bg-surface-1"
+                    [routerLink]="['/documents', doc.id]"
+                    data-testid="doc-row"
+                  >
+                    <td class="py-3 text-text">
+                      {{ doc.filename }}
+                      @if (doc.category) {
+                        <span class="ml-2 text-xs text-text-dim">{{ doc.category }}</span>
+                      }
+                    </td>
+                    <td class="py-3 text-text-muted">{{ formatSize(doc.sizeBytes) }}</td>
+                    <td class="py-3">
+                      <span
+                        class="rounded-full border px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider"
+                        [class]="statusClass(doc.status)"
+                        >{{ doc.status }}</span
+                      >
+                    </td>
+                    <td class="py-3 text-text-muted">{{ formatDate(doc.createdAt) }}</td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          }
+        </section>
+      </div>
+    </div>
   `,
 })
 export class DocumentsPage implements OnInit {
@@ -179,16 +198,14 @@ export class DocumentsPage implements OnInit {
   protected readonly search = signal('');
   protected readonly statusFilter = signal('');
   protected readonly categoryFilter = signal('');
+  protected readonly selectedFolderId = signal<string | null>(null);
   protected readonly categories = DOCUMENT_CATEGORIES;
 
   constructor() {
-    // Debounce the search box so we don't fire a request per keystroke.
     toObservable(this.search)
       .pipe(debounceTime(300), distinctUntilChanged(), takeUntilDestroyed())
       .subscribe(() => this.refresh());
 
-    // While any document is still being processed, re-fetch the list every 3s
-    // so statuses (and categories) update without a manual refresh.
     timer(3000, 3000)
       .pipe(takeUntilDestroyed())
       .subscribe(() => {
@@ -200,8 +217,18 @@ export class DocumentsPage implements OnInit {
     this.refresh();
   }
 
+  protected onFolderSelected(folderId: string | null): void {
+    this.selectedFolderId.set(folderId);
+    this.refresh();
+  }
+
   protected isFiltered(): boolean {
-    return !!(this.search().trim() || this.statusFilter() || this.categoryFilter());
+    return !!(
+      this.search().trim() ||
+      this.statusFilter() ||
+      this.categoryFilter() ||
+      this.selectedFolderId()
+    );
   }
 
   protected onFilesSelected(files: File[]): void {
@@ -217,7 +244,9 @@ export class DocumentsPage implements OnInit {
     this.rejected.set(rejected);
 
     for (const file of accepted) {
-      const handle = this.uploadService.upload(file);
+      const handle = this.uploadService.upload(file, {
+        folderId: this.selectedFolderId() ?? undefined,
+      });
       this.uploads.update((list) => [handle, ...list]);
       void handle.done.then((ok) => {
         if (ok) this.refresh();
@@ -233,6 +262,7 @@ export class DocumentsPage implements OnInit {
         ...(this.search().trim() ? { q: this.search().trim() } : {}),
         ...(this.statusFilter() ? { status: this.statusFilter() } : {}),
         ...(this.categoryFilter() ? { category: this.categoryFilter() } : {}),
+        ...(this.selectedFolderId() ? { folderId: this.selectedFolderId() as string } : {}),
       })
       .subscribe({
         next: (res) => {
