@@ -10,6 +10,8 @@ export const DocumentStatusSchema = z.enum([
   'uploaded',
   'extracting',
   'extracted',
+  'needs_ocr',
+  'ocr_processing',
   'analyzing',
   'ready',
   'failed',
@@ -41,6 +43,8 @@ export const DocumentSchema = z.object({
   tags: z.array(z.string()),
   language: z.string().nullable(),
   pageCount: z.number().int().nonnegative().nullable(),
+  // Set when the document is moved into a folder (Phase 9); null = root level.
+  folderId: z.uuid().nullable(),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
 });
@@ -59,6 +63,7 @@ export const CreateDocumentDtoSchema = z.object({
     .int()
     .positive()
     .max(MAX_UPLOAD_SIZE_BYTES, 'File exceeds the 10 MB limit.'),
+  folderId: z.uuid().nullable().optional(),
 });
 export type CreateDocumentDto = z.infer<typeof CreateDocumentDtoSchema>;
 
@@ -84,6 +89,8 @@ export const DocumentListQuerySchema = z.object({
   q: z.string().trim().min(1).max(200).optional(),
   status: DocumentStatusSchema.optional(),
   category: z.string().min(1).max(80).optional(),
+  /** Filter to documents inside a specific folder (null = root only). */
+  folderId: z.uuid().optional(),
 });
 export type DocumentListQuery = z.infer<typeof DocumentListQuerySchema>;
 

@@ -8,7 +8,7 @@
 import { DocumentsRepo } from '../../../repositories/documents-repo';
 import { buildTextKey, getObjectBytes, putText } from '../../../lib/storage/s3';
 import { extractText } from '../../../lib/extract/text-extractor';
-import { publishDocumentExtracted } from '../../../lib/events';
+import { publishDocumentExtracted, publishDocumentNeedsOcr } from '../../../lib/events';
 import { sqsWorker, type EventBridgeEnvelope } from '../runner';
 
 interface S3ObjectCreatedDetail {
@@ -54,6 +54,20 @@ export const handler = sqsWorker('extract', async (envelope: EventBridgeEnvelope
   try {
     const bytes = await getObjectBytes(claimed.s3_key);
     const { text, pageCount } = await extractText(bytes, claimed.mime_type);
+
+    // Scanned/image PDFs yield little or no extractable text.
+    // Route them to the OCR worker instead of the AI analysis pipeline.
+    const MIN_TEXT_CHARS = 50;
+    if (text.trim().length < MIN_TEXT_CHARS) {
+      await repo.markNeedsOcr(documentId);
+      await publishDocumentNeedsOcr({ orgId, documentId, s3Key: claimed.s3_key });
+      log.info(
+        { documentId, chars: text.trim().length },
+        'extract: text too short, routing to OCR',
+      );
+      return;
+    }
+
     const textS3Key = buildTextKey(orgId, documentId);
     await putText(textS3Key, text);
     await repo.markExtracted(documentId, { textS3Key, ...(pageCount ? { pageCount } : {}) });

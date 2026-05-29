@@ -7,7 +7,9 @@
 import { getAiProvider } from '../../../lib/ai';
 import { getObjectText } from '../../../lib/storage/s3';
 import { AiAnalysesRepo } from '../../../repositories/ai-analyses-repo';
+import { ActivityRepo } from '../../../repositories/activity-repo';
 import { DocumentsRepo } from '../../../repositories/documents-repo';
+import { NotificationsRepo } from '../../../repositories/notifications-repo';
 import { sqsWorker } from '../runner';
 import { isExtractedDetail, READY_KINDS } from '../_shared';
 
@@ -38,5 +40,20 @@ export const handler = sqsWorker('summarize', async (envelope, log) => {
   if (data.language) await docs.setLanguage(documentId, data.language);
 
   const ready = await docs.markReadyIfAnalysesComplete(documentId, READY_KINDS, READY_KINDS.length);
+  if (ready) {
+    const doc = await docs.findById(documentId);
+    if (doc) {
+      // Notify all org members + log the event (best-effort, don't fail the worker).
+      await Promise.all([
+        NotificationsRepo.notifyDocReady({ orgId, documentId, filename: doc.filename }),
+        ActivityRepo.log({
+          orgId,
+          action: 'document.ready',
+          targetType: 'document',
+          targetId: documentId,
+        }),
+      ]).catch((err) => log.warn({ err }, 'summarize: notify/log failed (non-fatal)'));
+    }
+  }
   log.info({ documentId, ready }, 'summarize: done');
 });
