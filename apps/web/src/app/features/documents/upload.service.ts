@@ -58,7 +58,7 @@ export class UploadService {
   private readonly http = inject(HttpClient);
   private readonly documents = inject(DocumentsService);
 
-  upload(file: File): UploadHandle {
+  upload(file: File, opts: { folderId?: string } = {}): UploadHandle {
     const handle: MutableHandle = {
       file,
       progress: signal(0),
@@ -69,11 +69,15 @@ export class UploadService {
     };
 
     // Replace the placeholder promise with the real run.
-    (handle as { done: Promise<boolean> }).done = this.run(file, handle);
+    (handle as { done: Promise<boolean> }).done = this.run(file, handle, opts);
     return handle;
   }
 
-  private async run(file: File, handle: MutableHandle): Promise<boolean> {
+  private async run(
+    file: File,
+    handle: MutableHandle,
+    opts: { folderId?: string } = {},
+  ): Promise<boolean> {
     try {
       const created = await lastValueFrom(
         this.documents.create({
@@ -81,6 +85,7 @@ export class UploadService {
           // The browser-reported MIME is validated server-side too.
           mimeType: file.type as (typeof ALLOWED_UPLOAD_MIME_TYPES)[number],
           sizeBytes: file.size,
+          ...(opts.folderId ? { folderId: opts.folderId } : {}),
         }),
       );
 
@@ -130,6 +135,16 @@ export class UploadService {
 }
 
 function messageFor(err: unknown): string {
+  // Surface plan-limit errors clearly so the user knows to upgrade.
+  if (
+    err != null &&
+    typeof err === 'object' &&
+    'status' in err &&
+    (err as { status: number }).status === 429
+  ) {
+    const body = (err as { error?: { message?: string } }).error;
+    return body?.message ?? 'Monthly document limit reached. Upgrade to Pro.';
+  }
   if (err instanceof Error && err.message) return err.message;
   return 'Upload failed. Please try again.';
 }

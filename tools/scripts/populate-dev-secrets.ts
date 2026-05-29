@@ -18,7 +18,12 @@ const REGION = process.env.AWS_REGION ?? 'sa-east-1';
 const SECRET_NAME = `clouddocs/${STAGE}/api`;
 const REQUIRED_KEYS = ['DATABASE_URL', 'JWT_PRIVATE_KEY', 'JWT_PUBLIC_KEY'] as const;
 /** Uploaded only when present in .env.local. */
-const OPTIONAL_KEYS = ['OPENAI_API_KEY'] as const;
+const OPTIONAL_KEYS = [
+  'OPENAI_API_KEY',
+  'STRIPE_SECRET_KEY',
+  'STRIPE_WEBHOOK_SECRET',
+  'STRIPE_PRICE_ID',
+] as const;
 
 function parseEnvLocal(): Record<string, string> {
   const path = resolve(process.cwd(), '.env.local');
