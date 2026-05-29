@@ -18,8 +18,10 @@ const log = createLogger({ handler: 'billing-webhook' });
 interface StripeSubscriptionData {
   id: string;
   status: string;
-  current_period_end: number;
-  items: { data: Array<{ price: { id: string } }> };
+  // In Stripe API v22 (dahlia), current_period_end moved from the top-level
+  // subscription to each SubscriptionItem. Keep top-level as optional fallback.
+  current_period_end?: number;
+  items: { data: Array<{ price: { id: string }; current_period_end: number }> };
   metadata: Record<string, string | undefined>;
 }
 
@@ -42,9 +44,19 @@ async function handleCheckoutCompleted(session: StripeCheckoutSessionData): Prom
     stripeSubId: sub.id,
     stripePriceId: priceId,
     status: sub.status as 'active' | 'past_due' | 'canceled' | 'trialing',
-    currentPeriodEnd: new Date(sub.current_period_end * 1000),
+    currentPeriodEnd: periodEndDate(sub),
   });
   await OrgsRepo.setPlan(orgId, 'pro');
+}
+
+/** In Stripe API v22 (dahlia) current_period_end moved to items.data[0]. */
+function periodEndDate(sub: StripeSubscriptionData): Date {
+  const ts =
+    sub.items.data[0]?.current_period_end ??
+    sub.current_period_end ??
+    // Fallback: billing_cycle_anchor + 30 days (should never be reached).
+    Math.floor(Date.now() / 1000) + 30 * 86400;
+  return new Date(ts * 1000);
 }
 
 async function handleSubscriptionChange(sub: StripeSubscriptionData): Promise<void> {
@@ -59,7 +71,7 @@ async function handleSubscriptionChange(sub: StripeSubscriptionData): Promise<vo
     stripeSubId: sub.id,
     stripePriceId: priceId,
     status,
-    currentPeriodEnd: new Date(sub.current_period_end * 1000),
+    currentPeriodEnd: periodEndDate(sub),
   });
 
   if (status === 'canceled') {
